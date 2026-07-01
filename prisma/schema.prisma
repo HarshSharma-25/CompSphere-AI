@@ -1,0 +1,3304 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum NotificationType {
+  ALERT
+  TASK
+  COMPLIANCE
+  SYSTEM
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum AccessRole {
+  SUPER_ADMIN
+  ADMIN
+  CA_PARTNER
+  SENIOR_STAFF
+  JUNIOR_STAFF
+  ARTICLE
+  BILLING_STAFF
+  CLIENT
+}
+
+model User {
+  id                 String             @id @default(uuid()) @db.Uuid
+  email              String             @unique
+  passwordHash       String             @map("password_hash")
+  firstName          String             @map("first_name")
+  lastName           String             @map("last_name")
+  phone              String?
+  isTwoFactorEnabled Boolean            @default(false) @map("is_two_factor_enabled")
+  twoFactorSecret    String?            @map("two_factor_secret")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  deletedAt          DateTime?          @map("deleted_at")
+  
+  firmAccesses       FirmAccess[]
+  notifications      Notification[]
+  activities         Activity[]
+  userPreferences    UserPreference[]
+  searchHistory      SearchHistory[]
+  sessions           Session[]
+  auditLogs          AuditLog[]
+  
+  // Dynamic relations from new modules
+  uploadedVersions   DocumentVersion[]
+  ocrFeedbacks       OcrFeedback[]
+  ruleVersions       AuditRuleVersion[]
+  paperSignoffs      WorkingPaperSignoff[]
+  auditQueries       AuditQuery[]
+  auditResponses     AuditResponse[]
+  reconSessions      ReconciliationSession[]
+  placedHolds        LegalHold[]        @relation("PlacedHolds")
+  releasedHolds      LegalHold[]        @relation("ReleasedHolds")
+  noticeDrafts       NoticeDraft[]
+  noticeSubmissions  NoticeSubmission[]
+  staffAssignments   StaffAssignment[]
+  quizAttempts       QuizAttempt[]
+  certificates       Certificate[]
+
+  @@map("users")
+}
+
+model Firm {
+  id           String             @id @default(uuid()) @db.Uuid
+  name         String
+  tradeName    String?            @map("trade_name")
+  pan          String             @unique @db.VarChar(10)
+  gstin        String?            @unique @db.VarChar(15)
+  address      Json?
+  status       String             @default("active")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  firmAccesses FirmAccess[]
+  clients      Client[]
+  activities   Activity[]
+  searchHistory SearchHistory[]
+  userPreferences UserPreference[]
+
+  @@map("firms")
+}
+
+model Client {
+  id         String   @id @default(uuid()) @db.Uuid
+  firmId     String   @map("firm_id") @db.Uuid
+  name       String
+  tradeName  String?  @map("trade_name")
+  pan String @db.VarChar(10)
+  gstin String? @db.VarChar(15)
+  email      String?
+  phone      String?
+  status     String   @default("active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  firm       Firm     @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  profile    ClientProfile?
+
+  @@index([firmId])
+  @@index([pan])
+  @@index([gstin])
+  @@map("clients")
+}
+
+model FirmAccess {
+  id        String     @id @default(uuid()) @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  firmId    String     @map("firm_id") @db.Uuid
+  role      AccessRole @default(ARTICLE)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firm      Firm       @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, firmId])
+  @@index([firmId])
+  @@map("firm_access")
+}
+
+model Notification {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @map("user_id") @db.Uuid
+  title     String
+  message   String
+  type      NotificationType   @default(SYSTEM)
+  status    NotificationStatus @default(UNREAD)
+  metadata  Json?
+  createdAt DateTime           @default(now()) @map("created_at")
+  readAt    DateTime?          @map("read_at")
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+model Activity {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  firmId     String   @map("firm_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firm       Firm     @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@index([firmId, createdAt])
+  @@map("activities")
+}
+
+model UserPreference {
+  id               String  @id @default(uuid()) @db.Uuid
+  userId           String  @map("user_id") @db.Uuid
+  activeFirmId     String? @map("active_firm_id") @db.Uuid
+  theme            String  @default("system")
+  sidebarCollapsed Boolean @default(false) @map("sidebar_collapsed")
+  quickLinks       Json?   @map("quick_links")
+
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeFirm       Firm?   @relation(fields: [activeFirmId], references: [id], onDelete: SetNull)
+
+  @@unique([userId])
+  @@map("user_preferences")
+}
+
+model SearchHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  firmId       String   @map("firm_id") @db.Uuid
+  query        String
+  targetType   String?  @map("target_type")
+  targetId     String?  @map("target_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firm         Firm     @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@index([userId, firmId])
+  @@map("search_history")
+}
+
+model Session {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  refreshTokenHash  String   @map("refresh_token_hash")
+  ipAddress         String?  @map("ip_address")
+  userAgent         String?  @map("user_agent")
+  expiresAt         DateTime @map("expires_at")
+  isRevoked         Boolean  @default(false) @map("is_revoked")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  action    String
+  details   Json
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
+model DashboardWidget {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  firmId     String   @map("firm_id") @db.Uuid
+  widgetKey  String   @map("widget_key")
+  positionX  Int      @map("position_x")
+  positionY  Int      @map("position_y")
+  width      Int
+  height     Int
+  isVisible  Boolean  @default(true) @map("is_visible")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, firmId, widgetKey])
+  @@map("dashboard_widgets")
+}
+
+// ==========================================
+// MODULE 2: AI CLIENT ONBOARDING
+// ==========================================
+
+model ClientProfile {
+  id                   String            @id @default(uuid()) @db.Uuid
+  clientId             String            @unique @map("client_id") @db.Uuid
+  legalName            String            @map("legal_name")
+  tradeName            String?           @map("trade_name")
+  entityType           String            @map("entity_type")
+  constitutionOfBusiness String?         @map("constitution_of_business")
+  dateOfIncorporation  DateTime?         @map("date_of_incorporation")
+  turnoverRange        String?           @map("turnover_range")
+  employeeCount        Int               @default(0) @map("employee_count")
+  industrySector       String?           @map("industry_sector")
+  riskScore            String            @default("LOW") @map("risk_score")
+  riskNotes            String?           @map("risk_notes")
+  kycStatus            String            @default("PENDING") @map("kyc_status")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  client               Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  gstProfile           GstProfile?
+  panProfile           PanProfile?
+  cinProfile           CinProfile?
+  directors            Director[]
+  bankAccounts         BankAccount[]
+  signatories          Signatory[]
+  engagementLetters    EngagementLetter[]
+  tagAssignments       TagAssignment[]
+  staffAssignments     StaffAssignment[]
+  documents            Document[]
+  notices              Notice[]
+  litigationCases      LitigationCase[]
+  incomeTaxProfile     IncomeTaxProfile?
+  employees            Employee[]
+  payrollRuns          PayrollRun[]
+  coa                  ChartOfAccounts[]
+
+  @@map("client_profiles")
+}
+
+model GstProfile {
+  id                 String        @id @default(uuid()) @db.Uuid
+  clientProfileId    String        @unique @map("client_profile_id") @db.Uuid
+  gstin              String        @unique @db.VarChar(15)
+  registrationDate   DateTime?     @map("registration_date")
+  taxpayerType       String?       @map("taxpayer_type")
+  gstStatus          String        @map("gst_status")
+  filingFrequency    String        @default("MONTHLY") @map("filing_frequency")
+  jurisdictionState  String?       @map("jurisdiction_state")
+  jurisdictionCenter String?       @map("jurisdiction_center")
+  lastLookupAt       DateTime?     @map("last_lookup_at")
+
+  clientProfile      ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  returns            GstReturn[]
+  reconciliations    ReconciliationSession[]
+  itcRegister        ItcRegister[]
+  deadlines          GstDeadline[]
+  alerts             GstAlert[]
+  notices            GstNotice[]
+
+  @@map("gst_profiles")
+}
+
+model PanProfile {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @unique @map("client_profile_id") @db.Uuid
+  pan             String        @unique @db.VarChar(10)
+  panStatus       String        @map("pan_status")
+  holderName      String        @map("holder_name")
+  category        String?       @map("category")
+  aadhaarSeeding  String?       @map("aadhaar_seeding")
+  lastLookupAt    DateTime?     @map("last_lookup_at")
+
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@map("pan_profiles")
+}
+
+model CinProfile {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @unique @map("client_profile_id") @db.Uuid
+  cin             String        @unique @db.VarChar(21)
+  cinStatus       String        @map("cin_status")
+  authorizedCapital Decimal     @map("authorized_capital") @db.Decimal(18,2)
+  paidUpCapital   Decimal       @map("paid_up_capital") @db.Decimal(18,2)
+  rocOffice       String?       @map("roc_office")
+  classOfCompany  String?       @map("class_of_company")
+  lastLookupAt    DateTime?     @map("last_lookup_at")
+
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@map("cin_profiles")
+}
+
+model Director {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @map("client_profile_id") @db.Uuid
+  din             String        @db.VarChar(8)
+  name            String
+  designation     String
+  appointmentDate DateTime      @map("appointment_date")
+  status          String        @default("active")
+  pan             String?       @db.VarChar(10)
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([clientProfileId, din])
+  @@map("directors")
+}
+
+model BankAccount {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @map("client_profile_id") @db.Uuid
+  accountNumber   String        @map("account_number")
+  bankName        String        @map("bank_name")
+  ifsc            String        @db.VarChar(11)
+  branchName      String?       @map("branch_name")
+  accountType     String        @default("CURRENT") @map("account_type")
+  isPrimary       Boolean       @default(false) @map("is_primary")
+  isVerified      Boolean       @default(false) @map("is_verified")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  statements      BankStatement[]
+  transactions    Transaction[]
+
+  @@map("bank_accounts")
+}
+
+model Signatory {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @map("client_profile_id") @db.Uuid
+  name            String
+  email           String
+  phone           String
+  pan             String        @db.VarChar(10)
+  din             String?       @db.VarChar(8)
+  isAuthorized    Boolean       @default(true) @map("is_authorized")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@map("signatories")
+}
+
+model EngagementTemplate {
+  id            String             @id @default(uuid()) @db.Uuid
+  title         String
+  content       String             @db.Text
+  version       String             @default("1.0.0")
+  isActive      Boolean            @default(true) @map("is_active")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  letters       EngagementLetter[]
+
+  @@map("engagement_templates")
+}
+
+model EngagementLetter {
+  id            String             @id @default(uuid()) @db.Uuid
+  clientProfileId String           @map("client_profile_id") @db.Uuid
+  templateId    String             @map("template_id") @db.Uuid
+  pdfUrl        String?            @map("pdf_url")
+  status        String             @default("DRAFT") @map("status")
+  sentAt        DateTime?          @map("sent_at")
+  signedAt      DateTime?          @map("signed_at")
+  signedIp      String?            @map("signed_ip")
+  signatureHash String?            @map("signature_hash")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  clientProfile ClientProfile      @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  template      EngagementTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@map("engagement_letters")
+}
+
+model ClientTag {
+  id             String          @id @default(uuid()) @db.Uuid
+  firmId         String          @map("firm_id") @db.Uuid
+  name           String
+  color          String          @default("#5B4FE9")
+  isSystem       Boolean         @default(false) @map("is_system")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  tagAssignments TagAssignment[]
+
+  @@unique([firmId, name])
+  @@map("client_tags")
+}
+
+model TagAssignment {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @map("client_profile_id") @db.Uuid
+  tagId           String        @map("tag_id") @db.Uuid
+  assignedAt      DateTime      @default(now()) @map("assigned_at")
+
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  tag             ClientTag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([clientProfileId, tagId])
+  @@map("tag_assignments")
+}
+
+model OnboardingSession {
+  id             String   @id @default(uuid()) @db.Uuid
+  firmId         String   @map("firm_id") @db.Uuid
+  currentStep    Int      @default(1) @map("current_step")
+  stepData       Json     @map("step_data")
+  status         String   @default("IN_PROGRESS") @map("status")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([firmId])
+  @@map("onboarding_sessions")
+}
+
+model ImportJob {
+  id             String      @id @default(uuid()) @db.Uuid
+  firmId         String      @map("firm_id") @db.Uuid
+  fileName       String      @map("file_name")
+  totalRows      Int         @map("total_rows")
+  processedRows  Int         @default(0) @map("processed_rows")
+  failedRows     Int         @default(0) @map("failed_rows")
+  status         String      @default("PENDING") @map("status")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  logs           ImportLog[]
+
+  @@map("import_jobs")
+}
+
+model ImportLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  jobId      String    @map("job_id") @db.Uuid
+  rowNumber  Int       @map("row_number")
+  status     String    @map("status")
+  message    String?
+  rowData    Json?     @map("row_data")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  
+  job        ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("import_logs")
+}
+
+model StaffAssignment {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientProfileId String        @map("client_profile_id") @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  roleType        String        @default("PRIMARY_CA") @map("role_type")
+  assignedAt      DateTime      @default(now()) @map("assigned_at")
+  revokedAt       DateTime?     @map("revoked_at")
+
+  clientProfile   ClientProfile @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("staff_assignments")
+}
+
+model TrainingModule {
+  id          String         @id @default(uuid()) @db.Uuid
+  title       String
+  description String
+  videoUrl    String?        @map("video_url")
+  learningPath String        @default("GENERAL_AUDIT") @map("learning_path")
+  difficulty  String         @default("BEGINNER")
+  tasks       TrainingTask[]
+
+  @@map("training_modules")
+}
+
+model TrainingTask {
+  id             String         @id @default(uuid()) @db.Uuid
+  moduleId       String         @map("module_id") @db.Uuid
+  title          String
+  orderIndex     Int            @map("order_index")
+  pointsValue    Int            @default(10) @map("points_value")
+  module         TrainingModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  quizAttempts   QuizAttempt[]
+
+  @@map("training_tasks")
+}
+
+model QuizAttempt {
+  id        String       @id @default(uuid()) @db.Uuid
+  taskId    String       @map("task_id") @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  score     Int
+  passed    Boolean      @default(false)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  task      TrainingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_attempts")
+}
+
+model Certificate {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  moduleName  String   @map("module_name")
+  issuedAt    DateTime @default(now()) @map("issued_at")
+  verifyToken String   @unique @map("verify_token") @db.VarChar(64)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+// ==========================================
+// MODULE 3: DOCUMENT MANAGEMENT SYSTEM
+// ==========================================
+
+model DocumentFolder {
+  id              String           @id @default(uuid()) @db.Uuid
+  parentId        String?          @map("parent_id") @db.Uuid
+  firmId          String           @map("firm_id") @db.Uuid
+  clientProfileId String           @map("client_profile_id") @db.Uuid
+  name            String
+  path            String           @db.VarChar(1024)
+  isSystem        Boolean          @default(false) @map("is_system")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  parent          DocumentFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children        DocumentFolder[] @relation("FolderHierarchy")
+  documents       Document[]
+
+  @@unique([firmId, clientProfileId, parentId, name])
+  @@index([firmId, clientProfileId])
+  @@map("document_folders")
+}
+
+model Document {
+  id               String               @id @default(uuid()) @db.Uuid
+  folderId         String               @map("folder_id") @db.Uuid
+  clientProfileId  String               @map("client_profile_id") @db.Uuid
+  name             String
+  mimeType         String               @map("mime_type")
+  fileSize         BigInt               @map("file_size")
+  currentVersion   Int                  @default(1) @map("current_version")
+  md5Checksum      String               @map("md5_checksum") @db.VarChar(32)
+  isDeleted        Boolean              @default(false) @map("is_deleted")
+  activeLegalHold  Boolean              @default(false) @map("active_legal_hold")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  folder           DocumentFolder       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  clientProfile    ClientProfile        @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  versions         DocumentVersion[]
+  reviews          DocumentReview[]
+  statuses         DocumentStatus[]
+  expiries         DocumentExpiry[]
+  uploads          DocumentUpload[]
+  accessLogs       DocumentAccessLog[]
+  legalHolds       LegalHold[]
+
+  @@index([clientProfileId])
+  @@index([folderId])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id            String    @id @default(uuid()) @db.Uuid
+  documentId    String    @map("document_id") @db.Uuid
+  versionNumber Int       @map("version_number")
+  fileKey       String    @map("file_key")
+  fileSize      BigInt    @map("file_size")
+  md5Checksum   String    @map("md5_checksum") @db.VarChar(32)
+  uploadedById  String    @map("uploaded_by_id") @db.Uuid
+  changeSummary String?   @map("change_summary")
+  createdAt     DateTime  @map("created_at")
+
+  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  ocrJobs       OcrJob[]
+
+  @@unique([documentId, versionNumber])
+  @@map("document_versions")
+}
+
+model DocumentRequest {
+  id              String              @id @default(uuid()) @db.Uuid
+  firmId          String              @map("firm_id") @db.Uuid
+  clientProfileId String              @map("client_profile_id") @db.Uuid
+  title           String
+  description     String?
+  documentType    String              @map("document_type")
+  dueDate         DateTime            @map("due_date")
+  status          String              @default("PENDING") @map("status")
+  createdById     String              @map("created_by_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at")
+  
+  user            User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  uploads         DocumentUpload[]
+  reminders       DocumentReminder[]
+
+  @@index([firmId, clientProfileId])
+  @@map("document_requests")
+}
+
+model DocumentUpload {
+  id         String          @id @default(uuid()) @db.Uuid
+  requestId  String?         @map("request_id") @db.Uuid
+  documentId String          @map("document_id") @db.Uuid
+  source     String          @default("PORTAL") @map("source")
+  status     String          @default("PENDING_REVIEW") @map("status")
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  request    DocumentRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  document   Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_uploads")
+}
+
+model OcrJob {
+  id                String          @id @default(uuid()) @db.Uuid
+  documentVersionId String          @map("document_version_id") @db.Uuid
+  status            String          @default("PENDING") @map("status")
+  confidenceScore   Decimal?        @map("confidence_score") @db.Decimal(5,2)
+  errorMessage      String?         @map("error_message")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  processedAt       DateTime?       @map("processed_at")
+
+  version           DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+  ocrResults        OcrResult[]
+
+  @@map("ocr_jobs")
+}
+
+model OcrResult {
+  id             String        @id @default(uuid()) @db.Uuid
+  jobId          String        @map("job_id") @db.Uuid
+  extractedData  Json          @map("extracted_data")
+  rawText        String        @db.Text
+  classifiedType String        @map("classified_type")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  job            OcrJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  ocrFeedbacks   OcrFeedback[]
+
+  @@map("ocr_results")
+}
+
+model OcrFeedback {
+  id            String    @id @default(uuid()) @db.Uuid
+  resultId      String    @map("result_id") @db.Uuid
+  correctedData Json      @map("corrected_data")
+  correctedById String    @map("corrected_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  result        OcrResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [correctedById], references: [id], onDelete: Restrict)
+
+  @@map("ocr_feedbacks")
+}
+
+model DocumentReview {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  reviewerId String   @map("reviewer_id") @db.Uuid
+  decision   String   @map("decision")
+  comments   String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@map("document_reviews")
+}
+
+model DocumentStatus {
+  id             String   @id @default(uuid()) @db.Uuid
+  documentId     String   @map("document_id") @db.Uuid
+  status         String   @map("status")
+  periodCode     String   @map("period_code")
+  complianceType String   @map("compliance_type")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, periodCode, complianceType])
+  @@map("document_statuses")
+}
+
+model DocumentExpiry {
+  id            String    @id @default(uuid()) @db.Uuid
+  documentId    String    @map("document_id") @db.Uuid
+  documentType  String    @map("document_type")
+  expiryDate    DateTime  @map("expiry_date")
+  alertLeadDays Int       @default(30) @map("alert_lead_days")
+  lastNotifiedAt DateTime? @map("last_notified_at")
+  status        String    @default("ACTIVE") @map("status")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_expiry")
+}
+
+model DocumentReminder {
+  id             String    @id @default(uuid()) @db.Uuid
+  requestId      String    @map("request_id") @db.Uuid
+  channel        String    @map("channel")
+  scheduledTime  DateTime  @map("scheduled_time")
+  sentTime       DateTime? @map("sent_time")
+  readTime       DateTime? @map("read_time")
+  deliveryStatus String    @default("PENDING") @map("delivery_status")
+  escalationLevel Int      @default(1) @map("escalation_level")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  request        DocumentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("document_reminders")
+}
+
+model DocumentAccessLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  actionType String   @map("action_type")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_access_logs")
+}
+
+// ==========================================
+// MODULE 4: BOOKKEEPING & ACCOUNTING AUTOMATION
+// ==========================================
+
+model BankStatement {
+  id            String        @id @default(uuid()) @db.Uuid
+  bankAccountId String        @map("bank_account_id") @db.Uuid
+  fileName      String        @map("file_name")
+  importDate    DateTime      @default(now()) @map("import_date")
+  startDate     DateTime      @map("start_date")
+  endDate       DateTime      @map("end_date")
+  status        String        @default("PENDING") @map("status")
+  checksum      String        @map("checksum") @db.VarChar(64)
+  
+  bankAccount   BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+
+  @@map("bank_statements")
+}
+
+model Transaction {
+  id             String               @id @default(uuid()) @db.Uuid
+  bankAccountId  String               @map("bank_account_id") @db.Uuid
+  statementId    String?              @map("statement_id") @db.Uuid
+  transactionDate DateTime            @map("transaction_date")
+  rawNarration   String               @map("raw_narration")
+  amount         Decimal              @db.Decimal(18,2)
+  type           String               @map("type")
+  referenceNum   String?              @map("reference_num")
+  status         String               @default("PENDING_REVIEW") @map("status")
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  bankAccount    BankAccount          @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  bankStatement  BankStatement?       @relation(fields: [statementId], references: [id], onDelete: SetNull)
+  cleaningLogs   TransactionCleaning[]
+  mappings       LedgerMapping[]
+  journalEntries JournalEntry[]
+  duplicateFlags DuplicateFlag[]      @relation("TargetTransaction")
+  duplicateOf    DuplicateFlag[]      @relation("SourceTransaction")
+
+  @@index([bankAccountId, transactionDate])
+  @@map("transactions")
+}
+
+model TransactionCleaning {
+  id             String      @id @default(uuid()) @db.Uuid
+  transactionId  String      @map("transaction_id") @db.Uuid
+  cleanedMerchant String      @map("cleaned_merchant")
+  paymentChannel String      @map("payment_channel")
+  confidenceScore Decimal     @map("confidence_score") @db.Decimal(5,2)
+  isCorrected    Boolean     @default(false) @map("is_corrected")
+  correctedBy    String?     @map("corrected_by") @db.Uuid
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  transaction    Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@map("transaction_cleaning")
+}
+
+model ChartOfAccounts {
+  id              String           @id @default(uuid()) @db.Uuid
+  firmId          String           @map("firm_id") @db.Uuid
+  clientProfileId String           @map("client_profile_id") @db.Uuid
+  version         Int              @default(1)
+  isLocked        Boolean          @default(false) @map("is_locked")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  
+  accountGroups   AccountGroup[]
+  ledgerAccounts  LedgerAccount[]
+  mappingRules    MappingRule[]
+
+  clientProfile   ClientProfile    @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([firmId, clientProfileId, version])
+  @@map("chart_of_accounts")
+}
+
+model AccountGroup {
+  id                 String           @id @default(uuid()) @db.Uuid
+  coaId              String           @map("coa_id") @db.Uuid
+  parentId           String?          @map("parent_id") @db.Uuid
+  name               String
+  code               String           @db.VarChar(50)
+  scheduleIiiMapping String?          @map("schedule_iii_mapping")
+  
+  coa                ChartOfAccounts  @relation(fields: [coaId], references: [id], onDelete: Cascade)
+  parent             AccountGroup?    @relation("GroupHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children           AccountGroup[]   @relation("GroupHierarchy")
+  ledgerAccounts     LedgerAccount[]
+
+  @@unique([coaId, code])
+  @@map("account_groups")
+}
+
+model LedgerAccount {
+  id             String          @id @default(uuid()) @db.Uuid
+  coaId          String          @map("coa_id") @db.Uuid
+  groupId        String          @map("group_id") @db.Uuid
+  name           String
+  code           String          @db.VarChar(50)
+  gstin          String?         @db.VarChar(15)
+  pan            String?         @db.VarChar(10)
+  openingBalance Decimal         @default(0.0) @map("opening_balance") @db.Decimal(18,2)
+  currentBalance Decimal         @default(0.0) @map("current_balance") @db.Decimal(18,2)
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  coa            ChartOfAccounts @relation(fields: [coaId], references: [id], onDelete: Cascade)
+  group          AccountGroup    @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  debitLines     JournalLine[]   @relation("DebitAccount")
+  creditLines    JournalLine[]   @relation("CreditAccount")
+  mappingRules   MappingRule[]
+
+  @@unique([coaId, code])
+  @@map("ledger_accounts")
+}
+
+model LedgerMapping {
+  id             String        @id @default(uuid()) @db.Uuid
+  transactionId  String        @map("transaction_id") @db.Uuid
+  debitAccountId String?       @map("debit_account_id") @db.Uuid
+  creditAccountId String?      @map("credit_account_id") @db.Uuid
+  confidenceScore Decimal      @map("confidence_score") @db.Decimal(5,2)
+  mappingSource  String        @default("AI") @map("mapping_source")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  transaction    Transaction   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@map("ledger_mappings")
+}
+
+model MappingRule {
+  id              String          @id @default(uuid()) @db.Uuid
+  coaId           String          @map("coa_id") @db.Uuid
+  ruleType        String          @default("CLIENT") @map("rule_type")
+  priority        Int             @default(1)
+  pattern         String
+  targetAccountId String          @map("target_account_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  coa             ChartOfAccounts @relation(fields: [coaId], references: [id], onDelete: Cascade)
+  targetAccount   LedgerAccount   @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+
+  @@map("mapping_rules")
+}
+
+model JournalEntry {
+  id             String        @id @default(uuid()) @db.Uuid
+  transactionId  String?       @unique @map("transaction_id") @db.Uuid
+  voucherNumber  String        @map("voucher_number") @db.VarChar(100)
+  entryDate      DateTime      @map("entry_date")
+  narration      String        @db.Text
+  voucherType    String        @map("voucher_type")
+  status         String        @default("DRAFT") @map("status")
+  isPeriodLocked Boolean       @default(false) @map("is_period_locked")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  transaction    Transaction?  @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  lines          JournalLine[]
+
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String        @id @default(uuid()) @db.Uuid
+  entryId        String        @map("entry_id") @db.Uuid
+  debitAccountId String?       @map("debit_account_id") @db.Uuid
+  creditAccountId String?      @map("credit_account_id") @db.Uuid
+  amount         Decimal       @db.Decimal(18,2)
+  gstRate        Decimal?      @map("gst_rate") @db.Decimal(5,2)
+  gstType        String?       @map("gst_type")
+  isItcEligible  Boolean       @default(true) @map("is_itc_eligible")
+  
+  entry          JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  debitAccount   LedgerAccount? @relation("DebitAccount", fields: [debitAccountId], references: [id], onDelete: Restrict)
+  creditAccount  LedgerAccount? @relation("CreditAccount", fields: [creditAccountId], references: [id], onDelete: Restrict)
+
+  @@map("journal_lines")
+}
+
+model DuplicateFlag {
+  id                  String      @id @default(uuid()) @db.Uuid
+  sourceTransactionId String      @map("source_transaction_id") @db.Uuid
+  targetTransactionId String      @map("target_transaction_id") @db.Uuid
+  confidenceScore     Decimal     @map("confidence_score") @db.Decimal(5,2)
+  status              String      @default("UNRESOLVED") @map("status")
+  createdAt           DateTime    @default(now()) @map("created_at")
+
+  sourceTransaction   Transaction @relation("SourceTransaction", fields: [sourceTransactionId], references: [id], onDelete: Cascade)
+  targetTransaction   Transaction @relation("TargetTransaction", fields: [targetTransactionId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceTransactionId, targetTransactionId])
+  @@map("duplicate_flags")
+}
+
+// ==========================================
+// MODULE 5: GST COMPLIANCE MANAGEMENT
+// ==========================================
+
+model ReconciliationSession {
+  id               String               @id @default(uuid()) @db.Uuid
+  gstProfileId     String               @map("gst_profile_id") @db.Uuid
+  periodCode       String               @map("period_code")
+  reconciledById   String               @map("reconciled_by_id") @db.Uuid
+  matchedCount     Int                  @default(0) @map("matched_count")
+  mismatchedCount  Int                  @default(0) @map("mismatched_count")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  gstProfile       GstProfile           @relation(fields: [gstProfileId], references: [id], onDelete: Cascade)
+  user             User                 @relation(fields: [reconciledById], references: [id], onDelete: Restrict)
+  reconciliationItems ReconciliationItem[]
+
+  @@map("reconciliation_sessions")
+}
+
+model ReconciliationItem {
+  id               String                @id @default(uuid()) @db.Uuid
+  sessionId        String                @map("session_id") @db.Uuid
+  invoiceNum       String                @map("invoice_num")
+  invoiceDate      DateTime              @map("invoice_date")
+  vendorGstin      String                @map("vendor_gstin")
+  booksAmount      Decimal               @db.Decimal(18,2)
+  gst2bAmount      Decimal               @db.Decimal(18,2)
+  status           String                @map("status")
+  notes            String?
+  resolvedAt       DateTime?             @map("resolved_at")
+
+  session          ReconciliationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("reconciliation_items")
+}
+
+model VendorComplianceScore {
+  id               String               @id @default(uuid()) @db.Uuid
+  vendorGstin      String               @unique @map("vendor_gstin")
+  legalName        String               @map("legal_name")
+  score            Decimal              @default(100.0) @db.Decimal(5,2)
+  filingTimeliness Decimal              @default(100.0) @map("filing_timeliness") @db.Decimal(5,2)
+  mismatchRate     Decimal              @default(0.0) @map("mismatch_rate") @db.Decimal(5,2)
+  status           String               @default("SAFE") @map("status")
+  lastUpdatedAt    DateTime             @updatedAt @map("last_updated_at")
+  riskHistory      VendorRiskHistory[]
+
+  @@map("vendor_compliance_scores")
+}
+
+model VendorRiskHistory {
+  id               String                @id @default(uuid()) @db.Uuid
+  scoreId          String                @map("score_id") @db.Uuid
+  scoreCaptured    Decimal               @map("score_captured") @db.Decimal(5,2)
+  assessmentPeriod String                @map("assessment_period")
+  createdAt        DateTime              @default(now()) @map("created_at")
+
+  vendorScore      VendorComplianceScore @relation(fields: [scoreId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_risk_history")
+}
+
+model ItcRegister {
+  id               String               @id @default(uuid()) @db.Uuid
+  gstProfileId     String               @map("gst_profile_id") @db.Uuid
+  periodCode       String               @map("period_code")
+  vendorGstin      String               @map("vendor_gstin")
+  invoiceNum       String               @map("invoice_num")
+  invoiceDate      DateTime             @map("invoice_date")
+  taxableValue     Decimal              @map("taxable_value") @db.Decimal(18,2)
+  igst             Decimal              @default(0.0) @db.Decimal(18,2)
+  cgst             Decimal              @default(0.0) @db.Decimal(18,2)
+  sgst             Decimal              @default(0.0) @db.Decimal(18,2)
+  isEligible       Boolean              @default(true) @map("is_eligible")
+  blockReason      String?              @map("block_reason")
+  reversalRule     String?              @map("reversal_rule")
+  claimedStatus    String               @default("PENDING") @map("claimed_status")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  gstProfile       GstProfile           @relation(fields: [gstProfileId], references: [id], onDelete: Cascade)
+
+  @@index([gstProfileId, periodCode])
+  @@map("itc_register")
+}
+
+model GstDeadline {
+  id               String               @id @default(uuid()) @db.Uuid
+  gstProfileId     String               @map("gst_profile_id") @db.Uuid
+  returnType       String               @map("return_type")
+  originalDueDate  DateTime             @map("original_due_date")
+  extendedDueDate  DateTime             @map("extended_due_date")
+  isCompleted      Boolean              @default(false) @map("is_completed")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  gstProfile       GstProfile           @relation(fields: [gstProfileId], references: [id], onDelete: Cascade)
+
+  @@map("gst_deadlines")
+}
+
+model GstAlert {
+  id               String               @id @default(uuid()) @db.Uuid
+  gstProfileId     String               @map("gst_profile_id") @db.Uuid
+  alertType        String               @map("alert_type")
+  message          String
+  severity         String               @default("INFO")
+  isResolved       Boolean              @default(false) @map("is_resolved")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  gstProfile       GstProfile           @relation(fields: [gstProfileId], references: [id], onDelete: Cascade)
+
+  @@map("gst_alerts")
+}
+
+model GstNotice {
+  id               String               @id @default(uuid()) @db.Uuid
+  gstProfileId     String               @map("gst_profile_id") @db.Uuid
+  noticeNumber     String               @map("notice_number")
+  issueDate        DateTime             @map("issue_date")
+  sectionCode      String               @map("section_code")
+  demandAmount     Decimal              @default(0.0) @map("demand_amount") @db.Decimal(18,2)
+  status           String               @default("PENDING_RESPONSE") @map("status")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  gstProfile       GstProfile           @relation(fields: [gstProfileId], references: [id], onDelete: Cascade)
+
+  @@map("gst_notices")
+}
+
+model GstReturn {
+  id               String            @id @default(uuid()) @db.Uuid
+  gstProfileId     String            @map("gst_profile_id") @db.Uuid
+  returnType       String            @map("return_type")
+  periodCode       String            @map("period_code")
+  status           String            @default("NOT_STARTED") @map("status")
+  taxLiability     Decimal           @default(0.0) @map("tax_liability") @db.Decimal(18,2)
+  itcClaimed       Decimal           @default(0.0) @map("itc_claimed") @db.Decimal(18,2)
+  interestPaid     Decimal           @default(0.0) @map("interest_paid") @db.Decimal(18,2)
+  lateFeePaid      Decimal           @default(0.0) @map("late_fee_paid") @db.Decimal(18,2)
+  filedAt          DateTime?         @map("filed_at")
+  arn              String?           @db.VarChar(100)
+  payloadJson      Json?             @map("payload_json")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  gstProfile       GstProfile        @relation(fields: [gstProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([gstProfileId, returnType, periodCode])
+  @@map("gst_returns")
+}
+
+// ==========================================
+// MODULE 7: NOTICES, LITIGATION & LEGAL DRAFTING
+// ==========================================
+
+model Notice {
+  id               String             @id @default(uuid()) @db.Uuid
+  firmId           String             @map("firm_id") @db.Uuid
+  clientProfileId  String             @map("client_profile_id") @db.Uuid
+  authority        String             @map("authority")
+  sectionCode      String             @map("section_code")
+  noticeNumber     String             @unique @map("notice_number")
+  assessmentYear   String             @map("assessment_year")
+  demandAmount     Decimal            @default(0.0) @map("demand_amount") @db.Decimal(18,2)
+  dueDate          DateTime           @map("due_date")
+  assignedStaffId  String?            @map("assigned_staff_id") @db.Uuid
+  status           String             @default("RECEIVED") @map("status")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  clientProfile    ClientProfile      @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  assignedStaff    User?              @relation(fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  attachments      NoticeAttachment[]
+  analysis         NoticeAnalysis[]
+  drafts           NoticeDraft[]
+  submissions      NoticeSubmission[]
+  litigationCases  LitigationCase[]
+
+  @@index([firmId, status])
+  @@map("notices")
+}
+
+model NoticeAttachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  noticeId  String   @map("notice_id") @db.Uuid
+  fileKey   String   @map("file_key")
+  fileName  String   @map("file_name")
+  fileSize  BigInt   @map("file_size")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  notice    Notice   @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+
+  @@map("notice_attachments")
+}
+
+model NoticeAnalysis {
+  id               String   @id @default(uuid()) @db.Uuid
+  noticeId         String   @unique @map("notice_id") @db.Uuid
+  summary          String   @db.Text
+  issuesIdentified Json     @map("issues_identified")
+  riskScore        Decimal  @map("risk_score") @db.Decimal(5,2)
+  evidenceRequired Json     @map("evidence_required")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  notice           Notice   @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+
+  @@map("notice_analysis")
+}
+
+model NoticeDraft {
+  id             String          @id @default(uuid()) @db.Uuid
+  noticeId       String          @map("notice_id") @db.Uuid
+  draftContent   String          @db.Text
+  defenseTone    String          @map("defense_tone")
+  createdById    String          @map("created_by_id") @db.Uuid
+  version        Int             @default(1)
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  notice         Notice          @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  legalDocuments LegalDocument[]
+
+  @@map("notice_drafts")
+}
+
+model NoticeSubmission {
+  id             String    @id @default(uuid()) @db.Uuid
+  noticeId       String    @map("notice_id") @db.Uuid
+  submissionDate DateTime  @map("submission_date")
+  arn            String?   @db.VarChar(100)
+  receiptUrl     String?   @map("receipt_url")
+  filedById      String    @map("filed_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  notice         Notice    @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [filedById], references: [id], onDelete: Restrict)
+
+  @@map("notice_submissions")
+}
+
+model CaseLaw {
+  id             String              @id @default(uuid()) @db.Uuid
+  citation       String              @unique
+  caseName       String              @map("case_name")
+  court          String
+  bench          String?
+  judge          String?
+  decisionDate   DateTime            @map("decision_date")
+  sections       String[]
+  issue          String              @db.Text
+  outcome        String              @map("outcome")
+  fullText       String              @db.Text
+  headnotes      String?             @db.Text
+  ratios         String?             @db.Text
+  createdAt      DateTime            @default(now()) @map("created_at")
+  citations      LegalCitation[]     @relation("ReferencedCase")
+  referencedBy   LegalCitation[]     @relation("SourceCase")
+  embeddings     CaseLawEmbedding[]
+
+  @@map("case_laws")
+}
+
+model CaseLawEmbedding {
+  id         String   @id @default(uuid()) @db.Uuid
+  caseLawId  String   @map("case_law_id") @db.Uuid
+  embedding  Unsupported("vector(1536)")?
+  
+  caseLaw    CaseLaw  @relation(fields: [caseLawId], references: [id], onDelete: Cascade)
+
+  @@map("case_law_embeddings")
+}
+
+model LegalCitation {
+  id               String   @id @default(uuid()) @db.Uuid
+  sourceCaseId     String   @map("source_case_id") @db.Uuid
+  referencedCaseId String   @map("referenced_case_id") @db.Uuid
+  
+  sourceCase       CaseLaw  @relation("SourceCase", fields: [sourceCaseId], references: [id], onDelete: Cascade)
+  referencedCase   CaseLaw  @relation("ReferencedCase", fields: [referencedCaseId], references: [id], onDelete: Cascade)
+
+  @@map("legal_citations")
+}
+
+model LitigationCase {
+  id              String             @id @default(uuid()) @db.Uuid
+  noticeId        String?            @map("notice_id") @db.Uuid
+  clientProfileId String             @map("client_profile_id") @db.Uuid
+  caseNumber      String             @unique @map("case_number")
+  forum           String
+  authority       String
+  demandAmount    Decimal            @default(0.0) @map("demand_amount") @db.Decimal(18,2)
+  reliefAmount    Decimal            @default(0.0) @map("relief_amount") @db.Decimal(18,2)
+  status          String             @default("PENDING") @map("status")
+  advocateName    String?            @map("advocate_name")
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  notice          Notice?            @relation(fields: [noticeId], references: [id], onDelete: SetNull)
+  clientProfile   ClientProfile      @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  hearings        Hearing[]
+  orders          Order[]
+  appeals         Appeal[]
+
+  @@map("litigation_cases")
+}
+
+model Hearing {
+  id               String         @id @default(uuid()) @db.Uuid
+  caseId           String         @map("case_id") @db.Uuid
+  hearingDate      DateTime       @map("hearing_date")
+  attendanceStatus String         @map("attendance_status")
+  outcomeNotes     String?        @map("outcome_notes") @db.Text
+  nextHearingDate  DateTime?      @map("next_hearing_date")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  litigationCase   LitigationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("hearings")
+}
+
+model Order {
+  id               String         @id @default(uuid()) @db.Uuid
+  caseId           String         @map("case_id") @db.Uuid
+  orderNumber      String         @map("order_number")
+  orderDate        DateTime       @map("order_date")
+  reliefGranted    Decimal        @default(0.0) @map("relief_granted") @db.Decimal(18,2)
+  demandConfirmed  Decimal        @default(0.0) @map("demand_confirmed") @db.Decimal(18,2)
+  penaltyImposed   Decimal        @default(0.0) @map("penalty_imposed") @db.Decimal(18,2)
+  fileKey          String?        @map("file_key")
+  appealDeadline   DateTime?      @map("appeal_deadline")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  litigationCase   LitigationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  stayOrders       StayOrder[]
+
+  @@map("orders")
+}
+
+model Appeal {
+  id             String         @id @default(uuid()) @db.Uuid
+  caseId         String         @map("case_id") @db.Uuid
+  forumFiled     String         @map("forum_filed")
+  dateOfFiling   DateTime       @map("date_of_filing")
+  appellantType  String         @map("appellant_type")
+  limitationDate DateTime       @map("limitation_date")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  litigationCase   LitigationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("appeals")
+}
+
+model StayOrder {
+  id             String    @id @default(uuid()) @db.Uuid
+  orderId        String    @map("order_id") @db.Uuid
+  stayGranted    Boolean   @default(false) @map("stay_granted")
+  expiryDate     DateTime? @map("expiry_date")
+  conditions     String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("stay_orders")
+}
+
+model LegalDocument {
+  id             String      @id @default(uuid()) @db.Uuid
+  draftId        String      @map("draft_id") @db.Uuid
+  documentType   String      @map("document_type")
+  fileKey        String      @map("file_key")
+  hash           String      @db.VarChar(64)
+  isLocked       Boolean     @default(false) @map("is_locked")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  draft          NoticeDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@map("legal_documents")
+}
+
+// ==========================================
+// MODULE 8: AUDIT & ASSURANCE
+// ==========================================
+
+model AuditEngagement {
+  id               String            @id @default(uuid()) @db.Uuid
+  firmId           String            @map("firm_id") @db.Uuid
+  clientProfileId  String            @map("client_profile_id") @db.Uuid
+  financialYear    String            @map("financial_year")
+  engagementType   String            @map("engagement_type")
+  status           String            @default("PLANNING") @map("status")
+  overallMateriality Decimal         @map("overall_materiality") @db.Decimal(18,2)
+  performanceMateriality Decimal       @map("performance_materiality") @db.Decimal(18,2)
+  tolerableError   Decimal           @map("tolerable_error") @db.Decimal(18,2)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  exceptions       AuditException[]
+  fraudAlerts      FraudAlert[]
+  fraudCases       FraudCase[]
+  workingPapers    WorkingPaper[]
+  queries          AuditQuery[]
+  samplingPlans    SamplingPlan[]
+  auditReports     AuditReport[]
+  evidence         AuditEvidence[]
+
+  clientProfile    ClientProfile     @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([firmId, clientProfileId, financialYear, engagementType])
+  @@map("audit_engagements")
+}
+
+model AuditRule {
+  id               String             @id @default(uuid()) @db.Uuid
+  firmId           String             @map("firm_id") @db.Uuid
+  name             String
+  code             String             @unique
+  description      String?
+  ruleScript       String             @map("rule_script")
+  isActive         Boolean            @default(true) @map("is_active")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  versions         AuditRuleVersion[]
+
+  @@map("audit_rules")
+}
+
+model AuditRuleVersion {
+  id          String    @id @default(uuid()) @db.Uuid
+  ruleId      String    @map("rule_id") @db.Uuid
+  versionNum  Int       @map("version_num")
+  ruleScript  String    @map("rule_script")
+  updatedById String    @map("updated_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  rule        AuditRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([ruleId, versionNum])
+  @@map("audit_rule_versions")
+}
+
+model AuditException {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  ruleCode       String          @map("rule_code")
+  transactionId  String?         @map("transaction_id") @db.Uuid
+  description    String
+  severity       String          @default("MEDIUM") @map("severity")
+  status         String          @default("UNRESOLVED") @map("status")
+  managementReply String?        @map("management_reply")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId, status])
+  @@map("audit_exceptions")
+}
+
+model FraudAlert {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  scenarioType   String          @map("scenario_type")
+  detectedOnId   String          @map("detected_on_id")
+  deviationScore Decimal         @map("deviation_score") @db.Decimal(5,2)
+  status         String          @default("NEW") @map("status")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@map("fraud_alerts")
+}
+
+model FraudCase {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  title          String
+  caseDetails    String          @map("case_details") @db.Text
+  status         String          @default("OPEN") @map("status")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@map("fraud_cases")
+}
+
+model WorkingPaperTemplate {
+  id             String         @id @default(uuid()) @db.Uuid
+  saCode         String         @unique @map("sa_code")
+  title          String
+  defaultContent String         @db.Text
+  createdAt      DateTime       @default(now()) @map("created_at")
+  papers         WorkingPaper[]
+
+  @@map("working_paper_templates")
+}
+
+model WorkingPaper {
+  id             String               @id @default(uuid()) @db.Uuid
+  engagementId   String               @map("engagement_id") @db.Uuid
+  templateId     String               @map("template_id") @db.Uuid
+  paperContent   String               @db.Text
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  engagement     AuditEngagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  template       WorkingPaperTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  signoffs       WorkingPaperSignoff[]
+
+  @@unique([engagementId, templateId])
+  @@map("working_papers")
+}
+
+model WorkingPaperSignoff {
+  id             String       @id @default(uuid()) @db.Uuid
+  workingPaperId String       @map("working_paper_id") @db.Uuid
+  signoffType    String       @map("signoff_type")
+  signedById     String       @map("signed_by_id") @db.Uuid
+  signedAt       DateTime     @default(now()) @map("signed_at")
+  signatureHash  String       @map("signature_hash")
+
+  workingPaper   WorkingPaper @relation(fields: [workingPaperId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [signedById], references: [id], onDelete: Restrict)
+
+  @@unique([workingPaperId, signoffType])
+  @@map("working_paper_signoffs")
+}
+
+model AuditQuery {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  queryText      String          @map("query_text") @db.Text
+  status         String          @default("RAISED") @map("status")
+  createdById    String          @map("created_by_id") @db.Uuid
+  assignedToEmail String         @map("assigned_to_email")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  responses      AuditResponse[]
+  observations   AuditObservation[]
+
+  @@map("audit_queries")
+}
+
+model AuditResponse {
+  id             String     @id @default(uuid()) @db.Uuid
+  queryId        String     @map("query_id") @db.Uuid
+  responseText   String     @map("response_text") @db.Text
+  respondedById  String     @map("responded_by_id") @db.Uuid
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  query          AuditQuery @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  user           User       @relation(fields: [respondedById], references: [id], onDelete: Restrict)
+
+  @@map("audit_responses")
+}
+
+model AuditObservation {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  queryId        String?         @map("query_id") @db.Uuid
+  title          String
+  description    String          @db.Text
+  financialImpact Decimal        @default(0.0) @map("financial_impact") @db.Decimal(18,2)
+  caroLinkage    String?         @map("caro_linkage")
+  severity       String          @default("MEDIUM")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  query          AuditQuery?     @relation(fields: [queryId], references: [id], onDelete: SetNull)
+
+  @@map("audit_observations")
+}
+
+model SamplingPlan {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  targetLedger   String          @map("target_ledger")
+  samplingMethod String          @map("sampling_method")
+  sampleSize     Int             @map("sample_size")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  results        SamplingResult[]
+
+  @@map("sampling_plans")
+}
+
+model SamplingResult {
+  id             String       @id @default(uuid()) @db.Uuid
+  planId         String       @map("plan_id") @db.Uuid
+  selectedRowIds String[]     @map("selected_row_ids")
+  errorsFound    Int          @default(0) @map("errors_found")
+  projectedError Decimal      @default(0.0) @map("projected_error") @db.Decimal(18,2)
+  conclusion     String?      @db.Text
+
+  plan           SamplingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@map("sampling_results")
+}
+
+model AuditReport {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  reportType     String          @map("report_type")
+  content        String          @db.Text
+  isFinalized    Boolean         @default(false) @map("is_finalized")
+  finalizedAt    DateTime?       @map("finalized_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@map("audit_reports")
+}
+
+model AuditEvidence {
+  id             String          @id @default(uuid()) @db.Uuid
+  engagementId   String          @map("engagement_id") @db.Uuid
+  title          String
+  fileKey        String          @map("file_key")
+  fileHash       String          @map("file_hash") @db.VarChar(64)
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  engagement     AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@map("audit_evidence")
+}
+
+// ==========================================
+// MODULE 6: INCOME TAX & AIS COMPLIANCE
+// ==========================================
+
+model IncomeTaxProfile {
+  id              String           @id @default(uuid()) @db.Uuid
+  firmId          String           @map("firm_id") @db.Uuid
+  clientProfileId String           @map("client_profile_id") @db.Uuid
+  pan             String           @unique @db.VarChar(10)
+  assessmentYear  String           @map("assessment_year")
+  taxRegime       String           @default("NEW") @map("tax_regime")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  filings         ItrFiling[]
+  aisTransactions AisTransaction[]
+  capitalGains    CapitalGainsLedger[]
+
+  clientProfile   ClientProfile    @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@index([firmId, pan])
+  @@map("income_tax_profiles")
+}
+
+model ItrFiling {
+  id                 String           @id @default(uuid()) @db.Uuid
+  incomeTaxProfileId String           @map("income_tax_profile_id") @db.Uuid
+  itrForm            String           @map("itr_form")
+  status             String           @default("PENDING") @map("status")
+  grossTotalIncome   Decimal          @default(0.0) @map("gross_total_income") @db.Decimal(18,2)
+  netTaxPayable      Decimal          @default(0.0) @map("net_tax_payable") @db.Decimal(18,2)
+  refundClaimed      Decimal          @default(0.0) @map("refund_claimed") @db.Decimal(18,2)
+  ackNumber          String?          @map("ack_number") @db.VarChar(100)
+  filedAt            DateTime?        @map("filed_at")
+
+  profile            IncomeTaxProfile @relation(fields: [incomeTaxProfileId], references: [id], onDelete: Cascade)
+
+  @@map("itr_filings")
+}
+
+model AisTransaction {
+  id                 String           @id @default(uuid()) @db.Uuid
+  incomeTaxProfileId String           @map("income_tax_profile_id") @db.Uuid
+  informationCode    String           @map("information_code")
+  sourceDescription  String           @map("source_description")
+  amount             Decimal          @db.Decimal(18,2)
+  taxDeductedAtSource Decimal         @default(0.0) @map("tax_deducted_at_source") @db.Decimal(18,2)
+  status             String           @default("UNRECONCILED")
+  createdAt          DateTime         @default(now()) @map("created_at")
+
+  profile            IncomeTaxProfile @relation(fields: [incomeTaxProfileId], references: [id], onDelete: Cascade)
+
+  @@map("ais_transactions")
+}
+
+model CapitalGainsLedger {
+  id                 String           @id @default(uuid()) @db.Uuid
+  incomeTaxProfileId String           @map("income_tax_profile_id") @db.Uuid
+  assetType          String           @map("asset_type")
+  purchaseDate       DateTime         @map("purchase_date")
+  saleDate           DateTime         @map("sale_date")
+  purchaseValue      Decimal          @map("purchase_value") @db.Decimal(18,2)
+  saleValue          Decimal          @map("sale_value") @db.Decimal(18,2)
+  gains              Decimal          @db.Decimal(18,2)
+  gainsType          String           @map("gains_type")
+  isIndexed          Boolean          @default(false) @map("is_indexed")
+
+  profile            IncomeTaxProfile @relation(fields: [incomeTaxProfileId], references: [id], onDelete: Cascade)
+
+  @@map("capital_gains_ledgers")
+}
+
+// ==========================================
+// MODULE 9: AI COPILOT & AUTOMATION HUB
+// ==========================================
+
+model CopilotSession {
+  id              String           @id @default(uuid()) @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  firmId          String           @map("firm_id") @db.Uuid
+  clientProfileId String?          @map("client_profile_id") @db.Uuid
+  title           String           @default("New Conversation")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  messages        CopilotMessage[]
+
+  @@index([userId, firmId])
+  @@map("copilot_sessions")
+}
+
+model CopilotMessage {
+  id             String         @id @default(uuid()) @db.Uuid
+  sessionId      String         @map("session_id") @db.Uuid
+  role           String         @map("role")
+  content        String         @db.Text
+  citations      Json?          @map("citations")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  session        CopilotSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("copilot_messages")
+}
+
+// ==========================================
+// MODULE 9 (NEW): PAYROLL & STATUTORY COMPLIANCE
+// ==========================================
+
+model Employee {
+  id               String            @id @default(uuid()) @db.Uuid
+  firmId           String            @map("firm_id") @db.Uuid
+  clientProfileId  String            @map("client_profile_id") @db.Uuid
+  employeeCode     String            @map("employee_code") @db.VarChar(50)
+  firstName        String            @map("first_name")
+  lastName         String            @map("last_name")
+  pan              String            @db.VarChar(10)
+  aadhaar          String            @db.VarChar(12)
+  email            String
+  phone            String?
+  uan              String?           @db.VarChar(12)
+  esiNumber        String?           @map("esi_number") @db.VarChar(17)
+  joiningDate      DateTime          @map("joining_date")
+  exitDate         DateTime?         @map("exit_date")
+  bankAccountNum   String?           @map("bank_account_num")
+  ifscCode         String?           @map("ifsc_code") @db.VarChar(11)
+  status           String            @default("ACTIVE") @map("status")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  clientProfile    ClientProfile     @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  salaryStructures SalaryStructure[]
+  attendanceLogs   Attendance[]
+  payrollDetails   PayrollDetail[]
+  pfRecords        PfRecord[]
+  esiRecords       EsiRecord[]
+  ptRecords        PtRecord[]
+  lwfRecords       LwfRecord[]
+  tdsRecords       TdsRecord[]
+  payslips         Payslip[]
+  bonusRecords     BonusRecord[]
+  gratuityRecords  GratuityRecord[]
+  settlements      Settlement[]
+
+  @@unique([clientProfileId, employeeCode])
+  @@map("employees")
+}
+
+model SalaryStructure {
+  id            String            @id @default(uuid()) @db.Uuid
+  employeeId    String            @map("employee_id") @db.Uuid
+  effectiveFrom DateTime          @map("effective_from")
+  basic         Decimal           @db.Decimal(18,2)
+  hra           Decimal           @db.Decimal(18,2)
+  specialAllow  Decimal           @map("special_allow") @db.Decimal(18,2)
+  conveyance    Decimal           @default(0.0) @db.Decimal(18,2)
+  isActive      Boolean           @default(true) @map("is_active")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  employee      Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("salary_structures")
+}
+
+model Attendance {
+  id           String            @id @default(uuid()) @db.Uuid
+  employeeId   String            @map("employee_id") @db.Uuid
+  periodCode   String            @map("period_code")
+  totalDays    Int               @map("total_days")
+  lopDays      Decimal           @default(0.0) @map("lop_days") @db.Decimal(4,2)
+  overtimeHours Decimal          @default(0.0) @map("overtime_hours") @db.Decimal(5,2)
+
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, periodCode])
+  @@map("attendance")
+}
+
+model PayrollRun {
+  id              String            @id @default(uuid()) @db.Uuid
+  firmId          String            @map("firm_id") @db.Uuid
+  clientProfileId String            @map("client_profile_id") @db.Uuid
+  periodCode      String            @map("period_code")
+  status          String            @default("DRAFT") @map("status")
+  grossPayout     Decimal           @default(0.0) @map("gross_payout") @db.Decimal(18,2)
+  netPayout       Decimal           @default(0.0) @map("net_payout") @db.Decimal(18,2)
+  approvedAt      DateTime?         @map("approved_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  details         PayrollDetail[]
+  clientProfile   ClientProfile     @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([clientProfileId, periodCode])
+  @@map("payroll_runs")
+}
+
+model PayrollDetail {
+  id           String            @id @default(uuid()) @db.Uuid
+  payrollRunId String            @map("payroll_run_id") @db.Uuid
+  employeeId   String            @map("employee_id") @db.Uuid
+  basicEarned  Decimal           @map("basic_earned") @db.Decimal(18,2)
+  hraEarned    Decimal           @map("hra_earned") @db.Decimal(18,2)
+  specialAllow Decimal           @map("special_allow") @db.Decimal(18,2)
+  grossSalary  Decimal           @map("gross_salary") @db.Decimal(18,2)
+  pfDeduction  Decimal           @map("pf_deduction") @db.Decimal(18,2)
+  esiDeduction Decimal           @map("esi_deduction") @db.Decimal(18,2)
+  ptDeduction  Decimal           @map("pt_deduction") @db.Decimal(18,2)
+  tdsDeduction Decimal           @map("tds_deduction") @db.Decimal(18,2)
+  netSalary    Decimal           @map("net_salary") @db.Decimal(18,2)
+
+  payrollRun   PayrollRun        @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([payrollRunId, employeeId])
+  @@map("payroll_details")
+}
+
+model PfRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  periodCode      String   @map("period_code")
+  wages           Decimal  @db.Decimal(18,2)
+  employeeShare   Decimal  @map("employee_share") @db.Decimal(18,2)
+  employerEpf     Decimal  @map("employer_epf") @db.Decimal(18,2)
+  employerEps     Decimal  @map("employer_eps") @db.Decimal(18,2)
+  employerEdli    Decimal  @map("employer_edli") @db.Decimal(18,2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("pf_records")
+}
+
+model EsiRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  periodCode      String   @map("period_code")
+  wages           Decimal  @db.Decimal(18,2)
+  employeeShare   Decimal  @map("employee_share") @db.Decimal(18,2)
+  employerShare   Decimal  @map("employer_share") @db.Decimal(18,2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("esi_records")
+}
+
+model PtRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  periodCode      String   @map("period_code")
+  stateCode       String   @map("state_code") @db.VarChar(2)
+  wages           Decimal  @db.Decimal(18,2)
+  deduction       Decimal  @db.Decimal(18,2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("pt_records")
+}
+
+model LwfRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  periodCode      String   @map("period_code")
+  stateCode       String   @map("state_code") @db.VarChar(2)
+  employeeShare   Decimal  @map("employee_share") @db.Decimal(18,2)
+  employerShare   Decimal  @map("employer_share") @db.Decimal(18,2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("lwf_records")
+}
+
+model TdsRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  periodCode      String   @map("period_code")
+  projectedAnnualIncome Decimal @map("projected_annual_income") @db.Decimal(18,2)
+  deduction       Decimal  @db.Decimal(18,2)
+  taxRegime       String   @map("tax_regime")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("tds_records")
+}
+
+model Payslip {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  periodCode      String   @map("period_code")
+  pdfUrl          String   @map("pdf_url")
+  sentAt          DateTime? @map("sent_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("payslips")
+}
+
+model BonusRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  financialYear   String   @map("financial_year")
+  wages           Decimal  @db.Decimal(18,2)
+  bonusAmount     Decimal  @map("bonus_amount") @db.Decimal(18,2)
+  paidAt          DateTime? @map("paid_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("bonus_records")
+}
+
+model GratuityRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  gratuityAmount  Decimal  @map("gratuity_amount") @db.Decimal(18,2)
+  yearsServed     Decimal  @map("years_served") @db.Decimal(4,2)
+  paidAt          DateTime? @map("paid_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("gratuity_records")
+}
+
+model Settlement {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  settlementDate  DateTime @map("settlement_date")
+  netSettlement   Decimal  @map("net_settlement") @db.Decimal(18,2)
+  lopAdjustment   Decimal  @map("lop_adjustment") @db.Decimal(18,2)
+  gratuityPaid    Decimal  @map("gratuity_paid") @db.Decimal(18,2)
+  leaveEncashment Decimal  @map("leave_encashment") @db.Decimal(18,2)
+  isApproved      Boolean  @default(false) @map("is_approved")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("settlements")
+}
+
+// ==========================================
+// MODULE 10: CORPORATE SECRETARIAL (MCA / ROC)
+// ==========================================
+
+enum ResolutionStatus {
+  DRAFT
+  REVIEWED
+  CIRCULATED
+  APPROVED
+  SIGNED
+  MINUTED
+}
+
+enum MeetingType {
+  BOARD_MEETING
+  AUDIT_COMMITTEE
+  AGM
+  EGM
+  RISK_COMMITTEE
+  NRC
+  STAKEHOLDERS_COMMITTEE
+  POSTAL_BALLOT
+}
+
+enum FormFilingStatus {
+  NOT_STARTED
+  IN_PREPARATION
+  READY_FOR_DSC
+  SUBMITTED
+  SRN_GENERATED
+  UNDER_PROCESSING
+  APPROVED
+  DEFECTIVE
+  RESUBMISSION_REQUIRED
+  LATE_FILED
+}
+
+model SecCompany {
+  id                  String             @id @default(uuid()) @db.Uuid
+  cin                 String             @unique @db.VarChar(21)
+  name                String
+  status              String             @default("ACTIVE")
+  classOfCompany      String             @map("class_of_company")
+  registeredOffice    Json               @map("registered_office")
+  rocOffice           String             @map("roc_office")
+  dateOfIncorporation DateTime           @map("date_of_incorporation")
+  authorizedCapital   Decimal            @map("authorized_capital") @db.Decimal(18,2)
+  paidUpCapital       Decimal            @map("paid_up_capital") @db.Decimal(18,2)
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  directors           SecDirector[]
+  shareholders        SecShareholder[]
+  meetings            SecBoardMeeting[]
+  resolutions         SecResolution[]
+  agmNotices          SecAgmNotice[]
+  minutes             SecMinutes[]
+  mcaForms            SecMcaForm[]
+  statutoryRegisters  SecStatutoryRegister[]
+  shareCapitalHistory SecShareCapitalHistory[]
+  charges             SecCharge[]
+  complianceCalendar  SecComplianceCalendarItem[]
+  corporateEvents     SecCorporateEvent[]
+  complianceRisks     SecComplianceRisk[]
+  logs                SecSecretarialLog[]
+
+  @@map("sec_companies")
+}
+
+model SecDirector {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  din             String         @db.VarChar(8)
+  name            String
+  designation     String
+  appointmentDate DateTime       @map("appointment_date")
+  resignationDate DateTime?      @map("resignation_date")
+  status          String         @default("ACTIVE")
+  email           String
+  mobile          String
+  pan             String         @db.VarChar(10)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  attendances     SecMeetingAttendee[]
+  kycHistory      SecDirectorKyc[]
+
+  @@unique([companyId, din])
+  @@map("sec_directors")
+}
+
+model SecShareholder {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  name            String
+  pan             String         @db.VarChar(10)
+  email           String
+  phone           String
+  totalShares     BigInt         @map("total_shares")
+  shareType       String         @default("EQUITY") @map("share_type")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_shareholders")
+}
+
+model SecBoardMeeting {
+  id              String             @id @default(uuid()) @db.Uuid
+  companyId       String             @map("company_id") @db.Uuid
+  meetingNumber   Int                @map("meeting_number")
+  meetingType     MeetingType        @default(BOARD_MEETING) @map("meeting_type")
+  dateTime        DateTime           @map("date_time")
+  locationType    String             @default("VENUE") @map("location_type")
+  venue           String?
+  status          String             @default("SCHEDULED")
+  chairmanId      String?            @map("chairman_id") @db.Uuid
+  quorumRequired  Int                @map("quorum_required")
+  quorumPresent   Int?               @map("quorum_present")
+  noticesSentAt   DateTime?          @map("notices_sent_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  company         SecCompany         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  attendees       SecMeetingAttendee[]
+  resolutions     SecResolution[]
+  minutes         SecMinutes[]
+
+  @@map("sec_board_meetings")
+}
+
+model SecMeetingAttendee {
+  id                String         @id @default(uuid()) @db.Uuid
+  meetingId         String         @map("meeting_id") @db.Uuid
+  directorId        String         @map("director_id") @db.Uuid
+  attendanceStatus  String         @default("PRESENT") @map("attendance_status")
+  modeOfAttendance  String         @default("PHYSICAL") @map("mode_of_attendance")
+  joinedAt          DateTime?      @map("joined_at")
+  leftAt            DateTime?      @map("left_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  meeting           SecBoardMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  director          SecDirector    @relation(fields: [directorId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, directorId])
+  @@map("sec_meeting_attendees")
+}
+
+model SecResolution {
+  id                String           @id @default(uuid()) @db.Uuid
+  companyId         String           @map("company_id") @db.Uuid
+  meetingId         String?          @map("meeting_id") @db.Uuid
+  resolutionNumber  String           @map("resolution_number")
+  type              String           @default("ORDINARY")
+  category          String
+  agendaItem        String           @map("agenda_item")
+  title             String
+  draftContent      String           @db.Text @map("draft_content")
+  finalizedContent  String?          @db.Text @map("finalized_content")
+  status            ResolutionStatus @default(DRAFT)
+  generatedByAi     Boolean          @default(false) @map("generated_by_ai")
+  createdBy         String           @map("created_by") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  company           SecCompany       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  meeting           SecBoardMeeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, resolutionNumber])
+  @@map("sec_resolutions")
+}
+
+model SecAgmNotice {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  dateOfAgm       DateTime       @map("date_of_agm")
+  location        String
+  clearDaysCount  Int            @map("clear_days_count")
+  noticeSentDate  DateTime       @map("notice_sent_date")
+  eVotingStart    DateTime?      @map("e_voting_start")
+  eVotingEnd      DateTime?      @map("e_voting_end")
+  proxyDeadline   DateTime       @map("proxy_deadline")
+  status          String         @default("DRAFT")
+  documentKey     String?        @map("document_key")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_agm_notices")
+}
+
+model SecMinutes {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  meetingId       String         @map("meeting_id") @db.Uuid
+  meetingType     MeetingType    @map("meeting_type")
+  dateTime        DateTime       @map("date_time")
+  status          String         @default("DRAFT")
+  currentVersion  Int            @default(1) @map("current_version")
+  finalSignedKey  String?        @map("final_signed_key")
+  signedAt        DateTime?      @map("signed_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  meeting         SecBoardMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@map("sec_minutes")
+}
+
+model SecMcaForm {
+  id              String           @id @default(uuid()) @db.Uuid
+  companyId       String           @map("company_id") @db.Uuid
+  formType        String           @map("form_type")
+  filingYear      String           @map("filing_year")
+  status          FormFilingStatus @default(NOT_STARTED)
+  formData        Json             @map("form_data")
+  signedDscUserId String?          @map("signed_dsc_user_id") @db.Uuid
+  isXbrl          Boolean          @default(false) @map("is_xbrl")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  company         SecCompany       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  srnRecords      SecSrnRecord[]
+
+  @@map("sec_mca_forms")
+}
+
+model SecSrnRecord {
+  id              String         @id @default(uuid()) @db.Uuid
+  formId          String         @map("form_id") @db.Uuid
+  srn             String         @unique @db.VarChar(9)
+  amountPaid      Decimal        @map("amount_paid") @db.Decimal(10,2)
+  challanDate     DateTime       @map("challan_date")
+  status          String         @default("PAYMENT_DONE")
+  errorCode       String?        @map("error_code")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  form            SecMcaForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@map("sec_srn_records")
+}
+
+model SecStatutoryRegister {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  registerType    String         @map("register_type")
+  recordsData     Json           @map("records_data")
+  verifiedAt      DateTime?      @map("verified_at")
+  lastUpdatedBy   String         @map("last_updated_by") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_statutory_registers")
+}
+
+model SecShareCapitalHistory {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  classOfShares   String         @map("class_of_shares")
+  authorizedShares BigInt        @map("authorized_shares")
+  authorizedValue  Decimal        @map("authorized_value") @db.Decimal(18,2)
+  paidUpShares    BigInt         @map("paid_up_shares")
+  paidUpValue     Decimal        @map("paid_up_value") @db.Decimal(18,2)
+  transactionType String         @map("transaction_type")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_share_capital_history")
+}
+
+model SecCharge {
+  id                String       @id @default(uuid()) @db.Uuid
+  companyId         String       @map("company_id") @db.Uuid
+  chargeId          String       @map("charge_id")
+  amount            Decimal      @db.Decimal(18,2)
+  lenderName        String       @map("lender_name")
+  assetDetails      String       @map("asset_details")
+  creationDate      DateTime     @map("creation_date")
+  modificationDate  DateTime?    @map("modification_date")
+  satisfactionDate  DateTime?    @map("satisfaction_date")
+  status            String       @default("OPEN")
+  chg1Srn           String?      @map("chg_1_srn") @db.VarChar(9)
+  chg4Srn           String?      @map("chg_4_srn") @db.VarChar(9)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  company           SecCompany   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_charges")
+}
+
+model SecComplianceCalendarItem {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  eventName       String         @map("event_name")
+  dueDate         DateTime       @map("due_date")
+  status          String         @default("PENDING")
+  description     String
+  riskCategory    String         @default("MEDIUM") @map("risk_category")
+  assignedUserId  String?        @map("assigned_user_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_compliance_calendar")
+}
+
+model SecDirectorKyc {
+  id              String              @id @default(uuid()) @db.Uuid
+  directorId      String              @map("director_id") @db.Uuid
+  kycDueDate      DateTime            @map("kyc_due_date")
+  status          String              @default("PENDING")
+  panVerified     Boolean             @default(false) @map("pan_verified")
+  emailVerified   Boolean             @default(false) @map("email_verified")
+  mobileVerified  Boolean             @default(false) @map("mobile_verified")
+  verificationDate DateTime?          @map("verification_date")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  director        SecDirector         @relation(fields: [directorId], references: [id], onDelete: Cascade)
+
+  @@map("sec_director_kyc")
+}
+
+model SecSecretarialAudit {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  auditYear       String         @map("audit_year")
+  leadAuditorId   String         @map("lead_auditor_id") @db.Uuid
+  status          String         @default("IN_PROGRESS")
+  observations    Json
+  risksFlagged    Int            @default(0) @map("risks_flagged")
+  reportKey       String?        @map("report_key")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@map("sec_secretarial_audits")
+}
+
+model SecCorporateEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  eventType       String         @map("event_type")
+  description     String
+  dateOfEvent     DateTime       @map("date_of_event")
+  status          String         @default("DRAFT")
+  workflowsState  Json           @map("workflows_state")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_corporate_events")
+}
+
+model SecComplianceRisk {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  riskType        String         @map("risk_type")
+  riskScore       Decimal        @map("risk_score") @db.Decimal(5,2)
+  riskFactors     Json           @map("risk_factors")
+  detectedAt      DateTime       @default(now()) @map("detected_at")
+  status          String         @default("OPEN")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_compliance_risks")
+}
+
+model SecSecretarialLog {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  userId          String         @map("user_id") @db.Uuid
+  actionType      String         @map("action_type")
+  description     String
+  metadata        Json?
+  clientIp        String?        @map("client_ip")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  company         SecCompany     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sec_secretarial_logs")
+}
+
+// ==========================================
+// MODULE 11: COMPLIANCE CALENDAR & ALERTS
+// ==========================================
+
+enum Authority {
+  GSTN
+  CBDT
+  CBIC
+  MCA
+  EPFO
+  ESIC
+  STATE_GOVT
+  CUSTOM
+}
+
+enum ComplianceCategory {
+  GST
+  INCOME_TAX
+  TDS
+  ROC
+  PF
+  ESI
+  PT
+  LWF
+  CUSTOM
+}
+
+enum AlertSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum AlertStatus {
+  PENDING
+  SENT
+  SNOOZED
+  ACKNOWLEDGED
+  FAILED
+}
+
+model SecComplianceType {
+  id              String             @id @default(uuid()) @db.Uuid
+  code            String             @unique // E.g., GSTR-3B, regular ITR, Form 16
+  name            String
+  authority       Authority
+  category        ComplianceCategory
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  deadlineRules   SecDeadlineRule[]
+  events          SecComplianceEvent[]
+  extensions      SecGovernmentExtension[]
+  slaRules        SecSlaRule[]
+
+  @@map("cal_compliance_types")
+}
+
+model SecDeadlineRule {
+  id                String            @id @default(uuid()) @db.Uuid
+  complianceTypeId  String            @map("compliance_type_id") @db.Uuid
+  frequency         String            // MONTHLY, QUARTERLY, ANNUALLY, ONE_TIME
+  dayOfMonth        Int?              @map("day_of_month")
+  monthsAfterFy     Int?              @map("months_after_fy")
+  gracePeriodDays   Int               @default(0) @map("grace_period_days")
+  penaltyPerDay     Decimal           @default(100.00) @map("penalty_per_day") @db.Decimal(10,2)
+
+  type              SecComplianceType @relation(fields: [complianceTypeId], references: [id], onDelete: Cascade)
+
+  @@map("cal_deadline_rules")
+}
+
+model SecComplianceEvent {
+  id                  String             @id @default(uuid()) @db.Uuid
+  companyId           String             @map("company_id") @db.Uuid
+  complianceTypeId    String             @map("compliance_type_id") @db.Uuid
+  title               String
+  dueDate             DateTime           @map("due_date")
+  status              String             @default("PENDING") // PENDING, COMPLETED, OVERDUE
+  assignedUserId      String?            @map("assigned_user_id") @db.Uuid
+  completedAt         DateTime?          @map("completed_at")
+  completedById       String?            @map("completed_by_id") @db.Uuid
+  notes               String?
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  type                SecComplianceType  @relation(fields: [complianceTypeId], references: [id], onDelete: Cascade)
+  alerts              SecAlert[]
+
+  @@index([dueDate, status])
+  @@index([companyId])
+  @@map("cal_compliance_events")
+}
+
+model SecGovernmentExtension {
+  id                String            @id @default(uuid()) @db.Uuid
+  complianceTypeId  String            @map("compliance_type_id") @db.Uuid
+  originalDueDate   DateTime          @map("original_due_date")
+  extendedDueDate   DateTime          @map("extended_due_date")
+  circularNumber    String            @map("circular_number")
+  officialLink      String?           @map("official_link")
+  extendedAt        DateTime          @default(now()) @map("extended_at")
+
+  type              SecComplianceType @relation(fields: [complianceTypeId], references: [id], onDelete: Cascade)
+
+  @@map("cal_government_extensions")
+}
+
+model SecAlert {
+  id                  String             @id @default(uuid()) @db.Uuid
+  complianceEventId   String             @map("compliance_event_id") @db.Uuid
+  title               String
+  description         String
+  triggerTime         DateTime           @map("trigger_time")
+  severity            AlertSeverity      @default(MEDIUM)
+  status              AlertStatus        @default(PENDING)
+  snoozeUntil         DateTime?          @map("snooze_until")
+  acknowledgedAt      DateTime?          @map("acknowledged_at")
+  acknowledgedById    String?            @map("acknowledged_by_id") @db.Uuid
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  event               SecComplianceEvent @relation(fields: [complianceEventId], references: [id], onDelete: Cascade)
+  logs                SecAlertLog[]
+
+  @@index([triggerTime, status])
+  @@map("cal_alerts")
+}
+
+model SecAlertChannel {
+  id        String          @id @default(uuid()) @db.Uuid
+  name      String          @unique // IN_APP, EMAIL, WHATSAPP, SMS, PUSH
+  isActive  Boolean         @default(true) @map("is_active")
+
+  logs      SecAlertLog[]
+
+  @@map("cal_alert_channels")
+}
+
+model SecAlertLog {
+  id              String          @id @default(uuid()) @db.Uuid
+  alertId         String          @map("alert_id") @db.Uuid
+  channelId       String          @map("channel_id") @db.Uuid
+  sentAt          DateTime        @default(now()) @map("sent_at")
+  status          String          @default("SENT") // SENT, DELIVERED, READ, FAILED
+  errorMessage    String?         @map("error_message")
+
+  alert           SecAlert        @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  channel         SecAlertChannel @relation(fields: [channelId], references: [id], onDelete: Restrict)
+
+  @@map("cal_alert_logs")
+}
+
+model SecAlertTemplate {
+  id             String          @id @default(uuid()) @db.Uuid
+  templateName   String          @map("template_name")
+  channel        String          // EMAIL, SMS, WHATSAPP, etc.
+  bodyFormat     String          @db.Text @map("body_format")
+  isDltApproved  Boolean         @default(false) @map("is_dlt_approved")
+  dltTemplateId  String?         @map("dlt_template_id")
+
+  @@map("cal_alert_templates")
+}
+
+model SecComplianceScore {
+  id                     String      @id @default(uuid()) @db.Uuid
+  companyId              String      @map("company_id") @db.Uuid
+  calculationDate        DateTime    @default(now()) @map("calculation_date")
+  gstScore               Decimal     @map("gst_score") @db.Decimal(5,2)
+  tdsScore               Decimal     @map("tds_score") @db.Decimal(5,2)
+  taxScore               Decimal     @map("tax_score") @db.Decimal(5,2)
+  rocScore               Decimal     @map("roc_score") @db.Decimal(5,2)
+  pfEsiScore             Decimal     @map("pf_esi_score") @db.Decimal(5,2)
+  docSubmissionScore     Decimal     @map("doc_submission_score") @db.Decimal(5,2)
+  noticeResponseScore    Decimal     @map("notice_response_score") @db.Decimal(5,2)
+  totalScore             Decimal     @map("total_score") @db.Decimal(5,2)
+  grade                  String      // EXCELLENT, GOOD, FAIR, POOR, CRITICAL
+
+  @@index([companyId, calculationDate])
+  @@map("cal_compliance_scores")
+}
+
+model SecClientHealth {
+  id             String      @id @default(uuid()) @db.Uuid
+  companyId      String      @unique @map("company_id") @db.Uuid
+  scoreHistory   Json        @map("score_history") // Array of scores over time
+  currentGrade   String      @map("current_grade")
+  trend          String      @default("STABLE") // UP, DOWN, STABLE
+  lastUpdatedAt  DateTime    @default(now()) @map("last_updated_at")
+
+  @@map("cal_client_health")
+}
+
+model SecComplianceRiskItem {
+  id             String      @id @default(uuid()) @db.Uuid
+  companyId      String      @map("company_id") @db.Uuid
+  riskType       String      @map("risk_type")
+  riskScore      Decimal     @map("risk_score") @db.Decimal(5,2)
+  riskFactors    Json        @map("risk_factors")
+  detectedAt     DateTime    @default(now()) @map("detected_at")
+  status         String      @default("OPEN") // OPEN, RESOLVED
+
+  @@map("cal_compliance_risks")
+}
+
+model SecCapacityForecast {
+  id             String      @id @default(uuid()) @db.Uuid
+  forecastDate   DateTime    @map("forecast_date")
+  department     String
+  totalLoad      Int         @map("total_load")
+  staffCount     Int         @map("staff_count")
+  avgUtilization Decimal     @map("avg_utilization") @db.Decimal(5,2)
+  capacityStatus String      @map("capacity_status") // UNDER_UTILIZED, BALANCED, OVERLOADED
+
+  @@map("cal_capacity_forecasts")
+}
+
+model SecStaffWorkload {
+  id                  String      @id @default(uuid()) @db.Uuid
+  userId              String      @unique @map("user_id") @db.Uuid
+  activeDeadlineCount Int         @map("active_deadline_count")
+  maxCapacity         Int         @map("max_capacity")
+  workloadPercentage  Decimal     @map("workload_percentage") @db.Decimal(5,2)
+  assignedEvents      Json        @map("assigned_events")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  @@map("cal_staff_workloads")
+}
+
+model SecSlaRule {
+  id                       String            @id @default(uuid()) @db.Uuid
+  complianceTypeId         String            @map("compliance_type_id") @db.Uuid
+  creationToAssignmentHrs  Int               @map("creation_to_assignment_hrs")
+  assignmentToStartHrs     Int               @map("assignment_to_start_hrs")
+  startToCompletionHrs     Int               @map("start_to_completion_hrs")
+  escalationRules          Json              @map("escalation_rules")
+
+  type                     SecComplianceType @relation(fields: [complianceTypeId], references: [id], onDelete: Cascade)
+
+  @@map("cal_sla_rules")
+}
+
+model SecHolidayCalendar {
+  id                String      @id @default(uuid()) @db.Uuid
+  stateCode         String      @map("state_code")
+  holidayDate       DateTime    @map("holiday_date")
+  name              String
+  isNationalHoliday Boolean     @default(false) @map("is_national_holiday")
+
+  @@unique([stateCode, holidayDate])
+  @@map("cal_holiday_calendar")
+}
+
+model SecCommunicationLog {
+  id              String      @id @default(uuid()) @db.Uuid
+  companyId       String      @map("company_id") @db.Uuid
+  userId          String      @map("user_id") @db.Uuid
+  channel         String      // EMAIL, SMS, WHATSAPP, etc.
+  direction       String      // INBOUND, OUTBOUND
+  messageBody     String      @db.Text @map("message_body")
+  deliveryReceipt String?     @map("delivery_receipt")
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  @@map("cal_communication_logs")
+}
+
+model CollabTask {
+  id                String       @id @default(uuid()) @db.Uuid
+  title             String
+  description       String?
+  companyId         String?      @map("company_id") @db.Uuid
+  moduleName        String       @map("module_name")
+  assigneeId        String?      @map("assignee_id") @db.Uuid
+  dueDate           DateTime     @map("due_date") @db.Date
+  priority          String       @default("NORMAL")
+  status            String       @default("PENDING")
+  subtasks          Json         @default("[]")
+  attachments       Json         @default("[]")
+  timeSpentMins     Int          @default(0) @map("time_spent_mins")
+  slaLimitHrs       Int?         @map("sla_limit_hrs")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @default(now()) @map("updated_at")
+
+  @@map("collab_tasks")
+}
+
+model CollabTaskDependency {
+  id             String   @id @default(uuid()) @db.Uuid
+  predecessorId  String   @map("predecessor_id") @db.Uuid
+  successorId    String   @map("successor_id") @db.Uuid
+
+  @@unique([predecessorId, successorId])
+  @@map("collab_task_dependencies")
+}
+
+model CollabTaskComment {
+  id          String   @id @default(uuid()) @db.Uuid
+  taskId      String   @map("task_id") @db.Uuid
+  authorId    String   @map("author_id") @db.Uuid
+  commentBody String   @map("comment_body")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("collab_task_comments")
+}
+
+model CollabTicket {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String
+  description String?
+  companyId   String    @map("company_id") @db.Uuid
+  source      String    // PORTAL, EMAIL, WHATSAPP
+  category    String    // TAX_ADVISORY, DOCUMENT_REQUEST, FILING_QUERY, PAYMENT_DISPUTE, ACCOUNT_ACCESS, GENERAL
+  priority    String    @default("NORMAL")
+  status      String    @default("OPEN")
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  csatScore   Int?      @map("csat_score")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  closedAt    DateTime? @map("closed_at")
+
+  @@map("collab_tickets")
+}
+
+model CollabTicketMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  senderId    String   @map("sender_id") @db.Uuid
+  senderType  String   @map("sender_type")
+  messageBody String   @map("message_body")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("collab_ticket_messages")
+}
+
+model CollabTicketSla {
+  id               String    @id @default(uuid()) @db.Uuid
+  ticketId         String    @unique @map("ticket_id") @db.Uuid
+  slaLimitMins     Int       @map("sla_limit_mins")
+  responseDueAt    DateTime  @map("response_due_at")
+  respondedAt      DateTime? @map("responded_at")
+  isEscalated      Boolean   @default(false) @map("is_escalated")
+  escalationLevel  Int       @default(0) @map("escalation_level")
+
+  @@map("collab_ticket_sla")
+}
+
+model CollabChatRoom {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String?
+  roomType  String   @default("DIRECT") @map("room_type")
+  companyId String?  @map("company_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("collab_chat_rooms")
+}
+
+model CollabChatMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  roomId      String   @map("room_id") @db.Uuid
+  senderId    String   @map("sender_id") @db.Uuid
+  senderType  String   @map("sender_type")
+  messageBody String   @map("message_body")
+  status      String   @default("SENT")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("collab_chat_messages")
+}
+
+model CollabChatAttachment {
+  id        String @id @default(uuid()) @db.Uuid
+  messageId String @map("message_id") @db.Uuid
+  fileName  String @map("file_name")
+  fileUrl   String @map("file_url")
+  sizeBytes Int    @map("size_bytes")
+
+  @@map("collab_chat_attachments")
+}
+
+model CollabInvoice {
+  id            String   @id @default(uuid()) @db.Uuid
+  invoiceNumber String   @unique @map("invoice_number")
+  companyId     String   @map("company_id") @db.Uuid
+  status        String   @default("DRAFT")
+  billingType   String   @map("billing_type")
+  amount        Decimal  @db.Decimal(15, 2)
+  taxGst        Decimal  @map("tax_gst") @db.Decimal(15, 2)
+  totalAmount   Decimal  @map("total_amount") @db.Decimal(15, 2)
+  paymentLink   String?  @map("payment_link")
+  dueDate       DateTime @map("due_date") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  @@map("collab_invoices")
+}
+
+model CollabInvoiceItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  description String
+  quantity    Decimal @default(1.00) @db.Decimal(10, 2)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(15, 2)
+  totalPrice  Decimal @map("total_price") @db.Decimal(15, 2)
+
+  @@map("collab_invoice_items")
+}
+
+model CollabPayment {
+  id               String   @id @default(uuid()) @db.Uuid
+  invoiceId        String   @map("invoice_id") @db.Uuid
+  amountPaid       Decimal  @map("amount_paid") @db.Decimal(15, 2)
+  paymentDate      DateTime @default(now()) @map("payment_date")
+  gatewayReference String?  @map("gateway_reference")
+  status           String   @default("SUCCESS")
+
+  @@map("collab_payments")
+}
+
+model CollabClientHealth {
+  id                         String   @id @default(uuid()) @db.Uuid
+  companyId                  String   @unique @map("company_id") @db.Uuid
+  csatScore                  Decimal? @default(5.00) @map("csat_score") @db.Decimal(3, 2)
+  billingTimelinessScore     Int      @default(100) @map("billing_timeliness_score")
+  docSubmissionScore         Int      @default(100) @map("doc_submission_score")
+  communicationFrequencyScore Int      @default(100) @map("communication_frequency_score")
+  queryResolutionScore       Int      @default(100) @map("query_resolution_score")
+  complianceHealthScore      Int      @default(100) @map("compliance_health_score")
+  relationshipGrade          String   @default("HEALTHY") @map("relationship_grade")
+  updatedAt                  DateTime @default(now()) @map("updated_at")
+
+  @@map("collab_client_health")
+}
+
+model CollabClientTimeline {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  eventType   String   @map("event_type")
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("collab_client_timeline")
+}
+
+model CollabApproval {
+  id          String   @id @default(uuid()) @db.Uuid
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id") @db.Uuid
+  requesterId String   @map("requester_id") @db.Uuid
+  reviewerId  String?  @map("reviewer_id") @db.Uuid
+  status      String   @default("DRAFT")
+  comments    String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("collab_approvals")
+}
+
+model CollabAnnouncement {
+  id          String   @id @default(uuid()) @db.Uuid
+  channel     String   @default("STAFF")
+  title       String
+  content     String
+  publisherId String   @map("publisher_id") @db.Uuid
+  isPinned    Boolean  @default(false) @map("is_pinned")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("collab_announcements")
+}
+
+model AdminRole {
+  id                String   @id @default(uuid()) @db.Uuid
+  roleName          String   @unique @map("role_name")
+  permissionsMatrix Json     @map("permissions_matrix")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("admin_roles")
+}
+
+model AdminUserRole {
+  id      String @id @default(uuid()) @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+  roleId  String @map("role_id") @db.Uuid
+
+  @@unique([userId, roleId])
+  @@map("admin_user_roles")
+}
+
+model AdminClientAccessOverride {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  permissionMatrix Json      @map("permission_matrix")
+  expiresAt        DateTime? @map("expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@map("admin_client_access_overrides")
+}
+
+model AdminAccessRequest {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  moduleName String   @map("module_name")
+  rationale  String
+  status     String   @default("PENDING")
+  approvedBy String?  @map("approved_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("admin_access_requests")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  timestamp  DateTime @default(now())
+  userId     String?  @map("user_id") @db.Uuid
+  username   String?
+  roleName   String?  @map("role_name")
+  actionType String   @map("action_type")
+  moduleName String   @map("module_name")
+  recordId   String?  @map("record_id")
+  recordName String?  @map("record_name")
+  oldValue   String?  @map("old_value")
+  newValue   String?  @map("new_value")
+  ipAddress  String   @map("ip_address")
+  deviceInfo String?  @map("device_info")
+  sessionId  String?  @map("session_id")
+
+  @@map("admin_audit_logs")
+}
+
+model AdminConsentLog {
+  id                  String   @id @default(uuid()) @db.Uuid
+  companyId           String   @map("company_id") @db.Uuid
+  consentFormVersion  String   @map("consent_form_version")
+  agreedAt            DateTime @default(now()) @map("agreed_at")
+  ipAddress           String   @map("ip_address")
+  method              String
+
+  @@map("admin_consent_logs")
+}
+
+model AdminDpdpGrievance {
+  id            String    @id @default(uuid()) @db.Uuid
+  companyId     String    @map("company_id") @db.Uuid
+  description   String
+  dpoAssigneeId String?   @map("dpo_assignee_id") @db.Uuid
+  status        String    @default("OPEN")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  resolvedAt    DateTime? @map("resolved_at")
+
+  @@map("admin_dpdp_grievances")
+}
+
+model AdminUserSession {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  sessionToken    String   @unique @map("session_token")
+  deviceInfo      String?  @map("device_info")
+  locationCountry String?  @map("location_country")
+  locationCity    String?  @map("location_city")
+  ipAddress       String?  @map("ip_address")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  expiresAt       DateTime @map("expires_at")
+
+  @@map("admin_user_sessions")
+}
+
+model AdminBackupSchedule {
+  id             String   @id @default(uuid()) @db.Uuid
+  backupType     String   @map("backup_type")
+  status         String   @default("RUNNING")
+  fileName       String?  @map("file_name")
+  fileSizeBytes  BigInt?  @map("file_size_bytes")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("admin_backup_schedules")
+}
+
+model AdminExportLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  companyId         String?  @map("company_id") @db.Uuid
+  exportType        String   @map("export_type")
+  filePath          String?  @map("file_path")
+  passwordProtected Boolean  @default(true) @map("password_protected")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("admin_export_logs")
+}
+
+model CfgFirmSetting {
+  id                  String   @id @default(uuid()) @db.Uuid
+  firmId              String   @map("firm_id") @db.Uuid
+  financialYearStart  String   @default("04-01") @map("financial_year_start")
+  currency            String   @default("INR")
+  timezone            String   @default("Asia/Kolkata")
+  dateFormat          String   @default("DD-MM-YYYY") @map("date_format")
+  numberFormat        String   @default("INDIAN") @map("number_format")
+  businessHoursStart  String   @default("09:00:00") @map("business_hours_start")
+  businessHoursEnd    String   @default("18:00:00") @map("business_hours_end")
+  updatedAt           DateTime @default(now()) @map("updated_at")
+
+  @@map("cfg_firm_settings")
+}
+
+model CfgBranding {
+  id                  String   @id @default(uuid()) @db.Uuid
+  firmId              String   @unique @map("firm_id") @db.Uuid
+  primaryColor        String   @default("#1e3a8a") @map("primary_color")
+  secondaryColor      String   @default("#10b981") @map("secondary_color")
+  logoUrl             String?  @map("logo_url")
+  stampUrl            String?  @map("stamp_url")
+  letterheadTemplate  String?  @map("letterhead_template")
+  documentThemePreset String   @default("PROFESSIONAL") @map("document_theme_preset")
+
+  @@map("cfg_branding")
+}
+
+model CfgIntegration {
+  id            String    @id @default(uuid()) @db.Uuid
+  firmId        String    @map("firm_id") @db.Uuid
+  serviceName   String    @map("service_name")
+  credentials   Json
+  syncSchedule  String    @default("0 0 * * *") @map("sync_schedule")
+  lastSyncAt    DateTime? @map("last_sync_at")
+  status        String    @default("DISCONNECTED")
+  errorLogs     String?   @map("error_logs")
+
+  @@map("cfg_integrations")
+}
+
+model CfgNotification {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  channelsPreference Json     @map("channels_preference")
+  typesPreference   Json     @map("types_preference")
+  quietHoursStart   String?  @map("quiet_hours_start")
+  quietHoursEnd     String?  @map("quiet_hours_end")
+  digestType        String   @default("INSTANT") @map("digest_type")
+
+  @@map("cfg_notifications")
+}
+
+model CfgSubscription {
+  id                  String   @id @default(uuid()) @db.Uuid
+  firmId              String   @unique @map("firm_id") @db.Uuid
+  planTier            String   @default("GROWTH") @map("plan_tier")
+  status              String   @default("ACTIVE")
+  billingCycle        String   @default("MONTHLY") @map("billing_cycle")
+  amount              Decimal  @db.Decimal(15, 2)
+  currentPeriodStart  DateTime @map("current_period_start")
+  currentPeriodEnd    DateTime @map("current_period_end")
+  usageCounters       Json     @map("usage_counters")
+
+  @@map("cfg_subscriptions")
+}
+
+model CfgAiSetting {
+  id                  String   @id @default(uuid()) @db.Uuid
+  firmId              String   @unique @map("firm_id") @db.Uuid
+  preferredModel      String   @default("GPT-4o") @map("preferred_model")
+  confidenceThreshold Decimal  @default(0.70) @map("confidence_threshold") @db.Decimal(3, 2)
+  allowDataTraining   Boolean  @default(false) @map("allow_data_training")
+  memoryRetentionDays Int      @default(90) @map("memory_retention_days")
+  autoApproveFilings  Boolean  @default(false) @map("auto_approve_filings")
+  privacyDeploymentMode String @default("CLOUD") @map("privacy_deployment_mode")
+
+  @@map("cfg_ai_settings")
+}
+
+model CfgTemplate {
+  id                String   @id @default(uuid()) @db.Uuid
+  firmId            String   @map("firm_id") @db.Uuid
+  templateType      String   @map("template_type")
+  name              String
+  subjectTemplate   String?  @map("subject_template")
+  bodyTemplate      String   @map("body_template")
+  variablesMetadata Json     @map("variables_metadata")
+  version           Int      @default(1)
+  updatedAt         DateTime @default(now()) @map("updated_at")
+
+  @@map("cfg_templates")
+}
+
+model CfgWorkflow {
+  id              String   @id @default(uuid()) @db.Uuid
+  firmId          String   @map("firm_id") @db.Uuid
+  name            String
+  triggerEvent    String   @map("trigger_event")
+  conditionRules  Json     @map("condition_rules")
+  actionsSequence Json     @map("actions_sequence")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("cfg_workflows")
+}
+
+model CfgFeatureFlag {
+  id                String  @id @default(uuid()) @db.Uuid
+  flagKey           String  @unique @map("flag_key")
+  description       String?
+  isEnabled         Boolean @default(false) @map("is_enabled")
+  rolloutPercentage Int     @default(100) @map("rollout_percentage")
+
+  @@map("cfg_feature_flags")
+}
+
+model CfgCustomField {
+  id              String   @id @default(uuid()) @db.Uuid
+  firmId          String   @map("firm_id") @db.Uuid
+  entityType      String   @map("entity_type")
+  fieldLabel      String   @map("field_label")
+  fieldType       String   @map("field_type")
+  validationRegex String?  @map("validation_regex")
+  isRequired      Boolean  @default(false) @map("is_required")
+  optionsList     Json?    @map("options_list")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("cfg_custom_fields")
+}
+
+model CfgSystemHealth {
+  id                  String   @id @default(uuid()) @db.Uuid
+  cpuUtilization      Decimal  @map("cpu_utilization") @db.Decimal(5, 2)
+  memoryUtilization   Decimal  @map("memory_utilization") @db.Decimal(5, 2)
+  dbConnectionCount   Int      @map("db_connection_count")
+  activeJobsQueue     Int      @map("active_jobs_queue")
+  apiResponseTimeMs   Int      @map("api_response_time_ms")
+  storageUsedBytes    BigInt   @map("storage_used_bytes")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("cfg_system_health")
+}
+
+model CfgApiKey {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  apiKeyHash      String    @unique @map("api_key_hash")
+  label           String
+  rateLimitPerMin Int       @default(60) @map("rate_limit_per_min")
+  requestsCount   Int       @default(0) @map("requests_count")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime? @map("expires_at")
+
+  @@map("cfg_api_keys")
+}
+
+model CfgWhiteLabel {
+  id            String   @id @default(uuid()) @db.Uuid
+  firmId        String   @unique @map("firm_id") @db.Uuid
+  customDomain  String?  @unique @map("custom_domain")
+  dnsTxtRecord  String?  @map("dns_txt_record")
+  sslStatus     String   @default("PENDING") @map("ssl_status")
+  dnsSynced     Boolean  @default(false) @map("dns_synced")
+
+  @@map("cfg_white_labels")
+}
+
+model CfgConfigurationBackup {
+  id                   String   @id @default(uuid()) @db.Uuid
+  firmId               String   @map("firm_id") @db.Uuid
+  version              Int
+  configurationPayload Json     @map("configuration_payload")
+  backupNote           String?  @map("backup_note")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@map("cfg_configuration_backups")
+}
+
+// =========================================================================
+// MODULE 16: REPORTS & EXPORT HUB MODELS
+// =========================================================================
+
+model RepCategory {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String      @unique @db.VarChar(100)
+  description String?     @db.VarChar(255)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  reports     RepReport[]
+
+  @@map("rep_categories")
+}
+
+model RepReport {
+  id            String          @id @default(uuid()) @db.Uuid
+  firmId        String          @map("firm_id") @db.Uuid
+  categoryId    String          @map("category_id") @db.Uuid
+  name          String          @db.VarChar(150)
+  description   String?
+  filtersSchema Json            @default("{}") @map("filters_schema")
+  isFavorite    Boolean         @default(false) @map("is_favorite")
+  runCount      Int             @default(0) @map("run_count")
+  createdBy     String?         @map("created_by") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at")
+  category      RepCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  schedules     RepSchedule[]
+  history       RepHistory[]
+  versions      RepVersion[]
+  permissions   RepPermission[]
+  comments      RepComment[]
+
+  @@map("rep_reports")
+}
+
+model RepTemplate {
+  id           String   @id @default(uuid()) @db.Uuid
+  firmId       String   @map("firm_id") @db.Uuid
+  name         String   @db.VarChar(150)
+  layoutConfig Json     @map("layout_config")
+  isCustom     Boolean  @default(true) @map("is_custom")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("rep_templates")
+}
+
+model RepFilter {
+  id            String   @id @default(uuid()) @db.Uuid
+  firmId       String   @map("firm_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  name          String   @db.VarChar(100)
+  filterPayload Json     @map("filter_payload")
+  isShared      Boolean  @default(false) @map("is_shared")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("rep_filters")
+}
+
+model RepSchedule {
+  id               String      @id @default(uuid()) @db.Uuid
+  reportId         String      @map("report_id") @db.Uuid
+  firmId           String      @map("firm_id") @db.Uuid
+  frequency        String      @default("MONTHLY") @db.VarChar(50)
+  cronExpression   String      @default("0 0 1 * *") @map("cron_expression") @db.VarChar(100)
+  recipients       Json
+  deliveryChannels Json        @map("delivery_channels")
+  isActive         Boolean     @default(true) @map("is_active")
+  lastTriggered    DateTime?   @map("last_triggered")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  report           RepReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("rep_schedules")
+}
+
+model RepHistory {
+  id              String      @id @default(uuid()) @db.Uuid
+  reportId        String      @map("report_id") @db.Uuid
+  generatedBy     String?     @map("generated_by") @db.Uuid
+  filtersApplied  Json        @map("filters_applied")
+  executionTimeMs Int         @default(0) @map("execution_time_ms")
+  status          String      @default("SUCCESS") @db.VarChar(50)
+  errorMessage    String?     @map("error_message")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  report          RepReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  exports         RepExport[]
+
+  @@map("rep_history")
+}
+
+model RepVersion {
+  id         String    @id @default(uuid()) @db.Uuid
+  reportId   String    @map("report_id") @db.Uuid
+  version    String    @db.VarChar(50)
+  status     String    @default("DRAFT") @db.VarChar(50)
+  changeNote String?   @map("change_note") @db.VarChar(255)
+  payload    Json
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  report     RepReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("rep_versions")
+}
+
+model RepExport {
+  id                   String             @id @default(uuid()) @db.Uuid
+  historyId            String             @map("history_id") @db.Uuid
+  exportFormat         String             @map("export_format") @db.VarChar(20)
+  filePath             String             @map("file_path") @db.VarChar(255)
+  fileSizeBytes        BigInt             @map("file_size_bytes")
+  isPasswordProtected  Boolean            @default(false) @map("is_password_protected")
+  digitalSignatureHash String?            @map("digital_signature_hash") @db.VarChar(255)
+  downloadCount        Int                @default(0) @map("download_count")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  history              RepHistory         @relation(fields: [historyId], references: [id], onDelete: Cascade)
+  sharedReports        RepSharedReport[]
+
+  @@map("rep_exports")
+}
+
+model RepPermission {
+  id           String    @id @default(uuid()) @db.Uuid
+  reportId     String    @map("report_id") @db.Uuid
+  role         String    @db.VarChar(50)
+  canView      Boolean   @default(true) @map("can_view")
+  canGenerate  Boolean   @default(true) @map("can_generate")
+  canDownload  Boolean   @default(true) @map("can_download")
+  canShare     Boolean   @default(true) @map("can_share")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  report       RepReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("rep_permissions")
+}
+
+model RepDashboard {
+  id            String               @id @default(uuid()) @db.Uuid
+  firmId        String               @map("firm_id") @db.Uuid
+  name          String               @db.VarChar(150)
+  dashboardType String               @default("MANAGING_PARTNER") @map("dashboard_type") @db.VarChar(50)
+  isActive      Boolean              @default(true) @map("is_active")
+  createdBy     String?              @map("created_by") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at")
+  widgets       RepDashboardWidget[]
+
+  @@map("rep_dashboards")
+}
+
+model RepDashboardWidget {
+  id               String       @id @default(uuid()) @db.Uuid
+  dashboardId      String       @map("dashboard_id") @db.Uuid
+  widgetType       String       @map("widget_type") @db.VarChar(50)
+  title            String       @db.VarChar(150)
+  layoutPosition   Json         @map("layout_position")
+  dataSourceConfig Json         @map("data_source_config")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  dashboard        RepDashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@map("rep_dashboard_widgets")
+}
+
+model RepSharedReport {
+  id                String    @id @default(uuid()) @db.Uuid
+  exportId          String    @map("export_id") @db.Uuid
+  sharedBy          String    @map("shared_by") @db.Uuid
+  shareChannel      String    @default("SECURE_LINK") @map("share_channel") @db.VarChar(50)
+  secureLinkToken   String    @unique @map("secure_link_token") @db.VarChar(255)
+  passwordHash      String?   @map("password_hash") @db.VarChar(255)
+  expiresAt         DateTime? @map("expires_at")
+  accessLogs        Json      @default("[]") @map("access_logs")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  export            RepExport @relation(fields: [exportId], references: [id], onDelete: Cascade)
+
+  @@map("rep_shared_reports")
+}
+
+model RepComment {
+  id              String       @id @default(uuid()) @db.Uuid
+  reportId        String       @map("report_id") @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  commentText     String       @map("comment_text")
+  parentCommentId String?      @map("parent_comment_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  report          RepReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  parentComment   RepComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies         RepComment[] @relation("CommentReplies")
+
+  @@map("rep_comments")
+}
+
+model RepAnalyticsCache {
+  id            String   @id @default(uuid()) @db.Uuid
+  firmId        String   @map("firm_id") @db.Uuid
+  cacheKey      String   @unique @map("cache_key") @db.VarChar(255)
+  cachedPayload Json     @map("cached_payload")
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("rep_analytics_cache")
+}
+
+
+
