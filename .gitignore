@@ -13,3 +13,19 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env*.local
+!.env.example

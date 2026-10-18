@@ -31,8 +31,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     
     if (isDark) {
       document.documentElement.classList.add('dark-mode');
+      document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark-mode');
+      document.documentElement.classList.remove('dark');
     }
   }, [isDark, mounted]);
 

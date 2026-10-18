@@ -153,7 +153,7 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
 
   // 3. REGULAR FULL DATA VIEW
   return (
-    <div className="w-full bg-white p-6 md:p-8">
+    <div className="w-full bg-white dark:bg-[#0F1B2D] p-6 md:p-8">
       {/* Title & Summary Boxes */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-start mb-8 gap-6">
         <div className="flex flex-col">
@@ -161,7 +161,7 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
             <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-blue-50">
               <div className="w-4 h-4 border-2 border-blue-500 rounded-sm"></div>
             </div>
-            <h2 className="text-[22px] text-[#111827] font-semibold tracking-tight">GSTR-2B reconciliation console</h2>
+            <h2 className="text-[22px] text-[#111827] dark:text-white font-semibold tracking-tight">GSTR-2B reconciliation console</h2>
           </div>
           <p className="text-[15px] text-gray-400 mt-2 ml-[60px]">Cross-match purchase register with GSTR-2B portal data · June 2026</p>
           
@@ -174,22 +174,22 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
                 placeholder="Search vendor or invoice..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-[#333333] text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 shadow-sm text-[15px]"
+                className="w-full pl-12 pr-4 py-3 bg-[#333333] dark:bg-slate-900/50 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 shadow-sm text-[15px] border border-transparent dark:border-slate-800"
               />
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-4 mt-2 lg:mt-0">
-          <div className="bg-green-50/70 rounded-xl px-7 py-3 text-center flex flex-col justify-center min-w-[100px]">
+          <div className="bg-green-50/70 dark:bg-emerald-950/30 rounded-xl px-7 py-3 text-center flex flex-col justify-center min-w-[100px] border border-transparent dark:border-emerald-900/50">
             <div className="text-[26px] font-medium text-emerald-500 leading-tight">{items.filter(i => i.status === 'EXACT_MATCH').length}</div>
             <div className="text-[14px] text-gray-400 mt-0.5">Matched</div>
           </div>
-          <div className="bg-yellow-50/70 rounded-xl px-7 py-3 text-center flex flex-col justify-center min-w-[100px]">
+          <div className="bg-yellow-50/70 dark:bg-orange-950/30 rounded-xl px-7 py-3 text-center flex flex-col justify-center min-w-[100px] border border-transparent dark:border-orange-900/50">
             <div className="text-[26px] font-medium text-orange-400 leading-tight">{items.filter(i => i.status === 'AMOUNT_MISMATCH').length}</div>
             <div className="text-[14px] text-gray-400 mt-0.5">Mismatch</div>
           </div>
-          <div className="bg-red-50/70 rounded-xl px-7 py-3 text-center flex flex-col justify-center min-w-[100px]">
+          <div className="bg-red-50/70 dark:bg-red-950/30 rounded-xl px-7 py-3 text-center flex flex-col justify-center min-w-[100px] border border-transparent dark:border-red-900/50">
             <div className="text-[26px] font-medium text-red-500 leading-tight">{items.filter(i => i.status.startsWith('MISSING')).length}</div>
             <div className="text-[14px] text-gray-400 mt-0.5">Missing</div>
           </div>
@@ -197,10 +197,10 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
       </div>
 
       {/* Grid Container */}
-      <div className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white">
+      <div className="overflow-hidden rounded-xl border border-[#E5E7EB] dark:border-slate-800 bg-white dark:bg-[#0F1B2D]">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-gray-50/50 text-gray-400 text-xs font-semibold uppercase tracking-wider border-b border-[#E5E7EB]">
+            <tr className="bg-gray-50/50 dark:bg-slate-900/50 text-gray-400 text-xs font-semibold uppercase tracking-wider border-b border-[#E5E7EB] dark:border-slate-800">
               <th className="p-4 py-5 pl-6 font-medium">Invoice Details</th>
               <th className="p-4 py-5 font-medium">Vendor</th>
               <th className="p-4 py-5 font-medium">In Books</th>
@@ -209,26 +209,26 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
               <th className="p-4 py-5 font-medium text-right pr-6">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E5E7EB]">
+          <tbody className="divide-y divide-[#E5E7EB] dark:divide-slate-800">
             {filteredItems.map(item => (
-              <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+              <tr key={item.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-900/30 transition-colors">
                 <td className="p-4 pl-6">
-                  <div className="font-medium text-[#111827] text-[15px]">{item.invoiceNum}</div>
+                  <div className="font-medium text-[#111827] dark:text-slate-200 text-[15px]">{item.invoiceNum}</div>
                   <div className="text-[13px] text-gray-400 mt-0.5">{item.invoiceDate.replace('2026-06-02', '2 Jun 2026').replace('2026-06-04', '4 Jun 2026').replace('2026-06-06', '6 Jun 2026').replace('2026-06-08', '8 Jun 2026').replace('2026-06-10', '10 Jun 2026')}</div>
                 </td>
                 <td className="p-4 text-gray-500 text-[15px]">{item.vendorName}</td>
-                <td className="p-4 text-[#111827] text-[15px] font-medium">
+                <td className="p-4 text-[#111827] dark:text-slate-200 text-[15px] font-medium">
                   {item.booksAmt > 0 ? `₹${item.booksAmt.toLocaleString()}` : <span className="text-gray-300">—</span>}
                 </td>
-                <td className={`p-4 text-center text-[15px] font-medium ${item.status === 'AMOUNT_MISMATCH' ? 'text-orange-500' : 'text-[#111827]'}`}>
+                <td className={`p-4 text-center text-[15px] font-medium ${item.status === 'AMOUNT_MISMATCH' ? 'text-orange-500' : 'text-[#111827] dark:text-slate-200'}`}>
                   {item.gst2bAmt > 0 ? `₹${item.gst2bAmt.toLocaleString()}` : <span className="text-gray-300">—</span>}
                 </td>
                 <td className="p-4">
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[13px] font-medium border ${
-                    item.status === 'EXACT_MATCH' ? 'bg-emerald-50 border-emerald-200 text-emerald-600' :
-                    item.status === 'AMOUNT_MISMATCH' ? 'bg-orange-50 border-orange-200 text-orange-600' :
-                    item.status === 'MISSING_IN_2B' ? 'bg-red-50 border-red-200 text-red-600' :
-                    'bg-purple-50 border-purple-200 text-purple-600'
+                    item.status === 'EXACT_MATCH' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                    item.status === 'AMOUNT_MISMATCH' ? 'bg-orange-50 dark:bg-orange-500/10 border-orange-200 dark:border-orange-500/20 text-orange-600 dark:text-orange-400' :
+                    item.status === 'MISSING_IN_2B' ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400' :
+                    'bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20 text-purple-600 dark:text-purple-400'
                   }`}>
                     {item.status === 'EXACT_MATCH' && <div className="w-3 h-3 border border-emerald-500 rounded-sm"></div>}
                     {item.status === 'AMOUNT_MISMATCH' && <div className="w-3 h-3 border border-orange-500 rounded-sm"></div>}
@@ -251,7 +251,7 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
                   ) : (
                     <button
                       onClick={() => setResolvingId(item.id)}
-                      className="px-4 py-1.5 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-600 font-medium text-[13px] rounded-lg transition-all"
+                      className="px-4 py-1.5 border border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-600 dark:text-slate-300 font-medium text-[13px] rounded-lg transition-all"
                     >
                       Resolve
                     </button>
@@ -279,16 +279,16 @@ export default function Gstr2bMatchingGrid({ simulateEmpty = false, simulateAiEr
       {/* Resolution Dialog Modal */}
       {resolvingId && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 shadow-2xl text-slate-900 w-[500px]">
+          <div className="bg-white dark:bg-[#0F1B2D] border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-2xl text-slate-900 dark:text-white w-[500px]">
             <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
               Resolve Discrepancy
             </h3>
             <div className="flex flex-col gap-3">
-              <button onClick={() => resolveItem(resolvingId, true)} className="w-full text-left p-3 rounded-lg border hover:bg-slate-50">
+              <button onClick={() => resolveItem(resolvingId, true)} className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/50">
                 <div className="font-semibold">Accept client books values</div>
               </button>
-              <button onClick={() => resolveItem(resolvingId, false)} className="w-full text-left p-3 rounded-lg border hover:bg-slate-50">
+              <button onClick={() => resolveItem(resolvingId, false)} className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/50">
                 <div className="font-semibold">Accept supplier GSTR-2B returns</div>
               </button>
             </div>

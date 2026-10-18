@@ -15,6 +15,7 @@ import CollaborationHub from '@/components/collaboration/CollaborationHub';
 import SecurityAdminConsole from '@/components/admin/SecurityAdminConsole';
 import SettingsControlCenter from '@/components/settings/SettingsControlCenter';
 import ReportsExportHub from '@/components/reports/ReportsExportHub';
+import AIInvoiceAnalysisModal from '@/components/ai-dashboard/AIInvoiceAnalysisModal';
 
 // Enterprise Dashboard Reusable UI Components
 import DashboardCard from '@/components/ui/DashboardCard';
@@ -247,6 +248,7 @@ export default function AppContent() {
   // Floating button quick action states
   const [showFabMenu, setShowFabMenu] = useState(false);
   const [showCreateInvoiceModal, setShowCreateInvoiceModal] = useState(false);
+  const [showAIAnalysisModal, setShowAIAnalysisModal] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [editInvoice, setEditInvoice] = useState<any>(null);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
@@ -265,6 +267,7 @@ export default function AppContent() {
   const [isLoadingPage, setIsLoadingPage] = useState(false);
   const [pageError, setPageError] = useState<boolean>(false);
   const [simulatePageFail, setSimulatePageFail] = useState(false);
+  const [showAISMismatchesModal, setShowAISMismatchesModal] = useState(false);
 
   // URL State Sync useEffect
   useEffect(() => {
@@ -305,7 +308,10 @@ export default function AppContent() {
       }
     } else if (primaryPath === 'billing') {
       setActivePage('invoices');
+    } else if (primaryPath === 'banking') {
+      setActivePage('banking');
     } else if (primaryPath === 'documents') {
+
       setActivePage('documents');
     } else if (primaryPath === 'ledger') {
       setActivePage('ledger');
@@ -451,6 +457,7 @@ export default function AppContent() {
   const [waClientId, setWaClientId] = useState('3'); // Gupta Pvt Ltd
   const [waFilePreset, setWaFilePreset] = useState('invoice_raw_678.pdf');
   const [waMessageText, setWaMessageText] = useState('Hey CA OS, here is the new invoice from Super Foods. Please file it!');
+  const [waPhoneInputText, setWaPhoneInputText] = useState('');
   const [waChatHistory, setWaChatHistory] = useState<any[]>([
     { sender: 'client', text: 'Hi, sending the bank statement for Mehta Enterprises for verification.', time: 'Yesterday' },
     { sender: 'ai', text: '📁 Received "HDFC_Current_May_2026.pdf". It has been auto-categorized into Bank Statements. Confidence: 98%.', time: 'Yesterday' }
@@ -970,6 +977,44 @@ export default function AppContent() {
     alert(`Document "${ocrForm.fileName}" successfully processed and categorized!`);
   };
 
+  const handlePhoneWaSend = (overrideText?: string) => {
+    const textToSend = typeof overrideText === 'string' ? overrideText : waPhoneInputText;
+    if (!textToSend.trim()) return;
+
+    const clientMsg = {
+      sender: 'client',
+      text: textToSend,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setWaChatHistory(prev => [...prev, clientMsg]);
+    setWaPhoneInputText('');
+    
+    // Simulate some AI response for generic messages if they don't have attachments
+    if (!textToSend.includes('[Attached:')) {
+      setTimeout(() => {
+        const aiReply = {
+          sender: 'ai',
+          text: `I've received your message. Please attach a document (invoice, receipt, bank statement) for me to process.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setWaChatHistory(prev => [...prev, aiReply]);
+      }, 1500);
+    } else {
+      // If it has attachment, simulate uploading
+      setIsWaUploading(true);
+      setTimeout(() => {
+        setIsWaUploading(false);
+        const aiReply = {
+          sender: 'ai',
+          text: `📁 Received your attachment. It has been auto-categorized based on content. Confidence: 94%.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setWaChatHistory(prev => [...prev, aiReply]);
+      }, 2000);
+    }
+  };
+
   const handleWaSend = () => {
     if (!waMessageText.trim()) return;
 
@@ -1232,6 +1277,7 @@ export default function AppContent() {
           <div className="sidebar-label">MODULES</div>
           {[
             { id: 'dashboard', icon: '📊', label: 'Dashboard', route: ROUTES.dashboard },
+            { id: 'banking', icon: '🏦', label: 'Banking', route: ROUTES.banking },
             { id: 'clients', icon: '👥', label: 'Clients', route: ROUTES.clients },
             { id: 'invoices', icon: '📄', label: 'Invoices', route: ROUTES.invoices },
             { id: 'documents', icon: '📁', label: 'Documents', route: ROUTES.documents },
@@ -1782,6 +1828,20 @@ export default function AppContent() {
         </div>
 
         <div className="content" style={{ position: 'relative' }}>
+          {activePage !== 'dashboard' && (
+            <div style={{ marginBottom: '24px' }}>
+              <Link 
+                href="/" 
+                className="group inline-flex items-center text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors w-fit"
+                style={{ textDecoration: 'none' }}
+              >
+                <div className="p-2 rounded-full bg-white shadow-sm border border-slate-100 mr-3 group-hover:shadow-md transition-all flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                </div>
+                Back to Dashboard
+              </Link>
+            </div>
+          )}
           {/* Branch Switching Loader Overlay */}
           {isBranchLoading && (
             <div style={{
@@ -2588,36 +2648,56 @@ export default function AppContent() {
           {/* CLIENTS */}
           {!isLoadingPage && !pageError && !selectedClientId && activePage === 'clients' && (
             <div className="page active">
-              <div className="page-header">
-                <h1>Client Onboarding & Management</h1>
-                <p>Manage, onboard, and assign {clients.length} active clients across branches</p>
+              <div className="mb-6">
+                <h1 className="text-3xl font-bold text-[#1e2b4d] mb-1">Client Onboarding & Management</h1>
+                <p className="text-[14px] text-slate-400 font-medium">Manage, onboard, and assign {clients.length} active clients across branches</p>
               </div>
 
               {/* Module 2 Client Workspace Tabs */}
-              <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              <div className="flex gap-2 mb-4 w-full overflow-x-auto pb-2">
                 <button
                   onClick={() => setActiveClientTab('directory')}
-                  className={`btn ${activeClientTab === 'directory' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                  className={`px-3 py-1.5 rounded-md text-[13px] font-bold transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap border ${
+                    activeClientTab === 'directory' 
+                      ? 'bg-white text-slate-800 border-slate-200 shadow-sm' 
+                      : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'
+                  }`}
                 >
-                  📋 Client Directory & Assignments
+                  <span>📋</span>
+                  Client Directory & Assignments
                 </button>
                 <button
                   onClick={() => setActiveClientTab('wizard')}
-                  className={`btn ${activeClientTab === 'wizard' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                  className={`px-3 py-1.5 rounded-md text-[13px] font-bold transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap border ${
+                    activeClientTab === 'wizard' 
+                      ? 'bg-white text-slate-800 border-slate-200 shadow-sm' 
+                      : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'
+                  }`}
                 >
-                  ✨ AI Onboarding Wizard
+                  <span className="text-amber-400">✨</span>
+                  AI Onboarding Wizard
                 </button>
                 <button
                   onClick={() => setActiveClientTab('import')}
-                  className={`btn ${activeClientTab === 'import' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                  className={`px-3 py-1.5 rounded-md text-[13px] font-bold transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap border ${
+                    activeClientTab === 'import' 
+                      ? 'bg-white text-slate-800 border-slate-200 shadow-sm' 
+                      : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'
+                  }`}
                 >
-                  📥 Bulk CSV Import
+                  <span className="text-blue-500">📥</span>
+                  Bulk CSV Import
                 </button>
                 <button
                   onClick={() => setActiveClientTab('staff')}
-                  className={`btn ${activeClientTab === 'staff' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                  className={`px-3 py-1.5 rounded-md text-[13px] font-bold transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap border ${
+                    activeClientTab === 'staff' 
+                      ? 'bg-white text-slate-800 border-slate-200 shadow-sm' 
+                      : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'
+                  }`}
                 >
-                  👥 Team & Staff Workspace
+                  <span className="text-slate-500">👥</span>
+                  Team & Staff Workspace
                 </button>
               </div>
 
@@ -2924,9 +3004,14 @@ export default function AppContent() {
                   <p>{selectedRole === 'Client' ? 'View your billing history and outstanding payments from your CA firm' : `Total: ₹${(totalRevenue / 100000).toFixed(2)}L | GST: ₹${(totalGst / 100000).toFixed(2)}L | Paid: ${paidCount} | Pending: ${pendingCount}`}</p>
                 </div>
                 {selectedRole !== 'Client' && (
-                  <button className="btn btn-primary" onClick={() => setShowCreateInvoiceModal(true)}>
-                    ➕ Create Invoice
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-primary" onClick={() => setShowCreateInvoiceModal(true)}>
+                      ➕ Create Invoice
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => setShowAIAnalysisModal(true)} style={{ background: 'var(--primary-light)', color: 'var(--primary)', border: 'none' }}>
+                      🤖 AI Risk Analysis
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -2995,6 +3080,10 @@ export default function AppContent() {
               )})()}
               
               {/* CREATE INVOICE MODAL */}
+              {showAIAnalysisModal && (
+                <AIInvoiceAnalysisModal onClose={() => setShowAIAnalysisModal(false)} />
+              )}
+
               {showCreateInvoiceModal && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <div className="card" style={{ width: '500px', maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -3177,7 +3266,7 @@ export default function AppContent() {
                   <div className="card-title">AIS Mismatches</div>
                   <div style={{ fontSize: '28px', fontWeight: '700', color: 'var(--danger)', marginTop: '12px' }}>3</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>Require attention</div>
-                  <button className="btn btn-sm btn-secondary" style={{ marginTop: '12px', width: '100%' }}>Review Mismatches</button>
+                  <button className="btn btn-sm btn-secondary" style={{ marginTop: '12px', width: '100%' }} onClick={() => setShowAISMismatchesModal(true)}>Review Mismatches</button>
                 </div>
 
                 <div className="card">
@@ -3889,19 +3978,79 @@ export default function AppContent() {
 
                     {/* Phone footer simulation input */}
                     <div style={{ background: '#F0F0F0', padding: '10px 16px', borderTop: '1px solid #ddd', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <div style={{ fontSize: '14px', color: '#666' }}>📎</div>
-                      <div style={{
-                        flex: 1,
-                        background: '#FFF',
-                        padding: '8px 16px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        color: 'var(--text-muted)',
-                        border: '1px solid #ccc'
-                      }}>
-                        {waMessageText ? waMessageText.substring(0, 30) + (waMessageText.length > 30 ? '...' : '') : 'Type a message...'}
-                      </div>
-                      <div style={{ fontSize: '16px', color: '#075E54' }}>🎤</div>
+                      <label 
+                        style={{ fontSize: '18px', color: '#666', cursor: 'pointer', margin: 0, display: 'flex', alignItems: 'center' }}
+                      >
+                        📎
+                        <input 
+                          type="file" 
+                          style={{ display: 'none' }} 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setWaPhoneInputText(prev => prev ? `${prev} [Attached: ${file.name}]` : `[Attached: ${file.name}]`);
+                              e.target.value = ''; // Reset input
+                            }
+                          }}
+                        />
+                      </label>
+                      <input 
+                        type="text"
+                        value={waPhoneInputText}
+                        onChange={(e) => setWaPhoneInputText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handlePhoneWaSend();
+                        }}
+                        placeholder="Type a message..."
+                        style={{
+                          flex: 1,
+                          background: '#FFF',
+                          padding: '10px 16px',
+                          borderRadius: '20px',
+                          fontSize: '13px',
+                          color: '#303030',
+                          border: 'none',
+                          outline: 'none'
+                        }}
+                      />
+                      {waPhoneInputText.trim() ? (
+                        <div 
+                          style={{ 
+                            fontSize: '14px', 
+                            color: '#fff', 
+                            background: '#075E54', 
+                            borderRadius: '50%', 
+                            width: '36px', 
+                            height: '36px', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => handlePhoneWaSend()}
+                        >➤</div>
+                      ) : (
+                        <div 
+                          style={{ 
+                            fontSize: '16px', 
+                            color: '#fff', 
+                            background: '#075E54', 
+                            borderRadius: '50%', 
+                            width: '36px', 
+                            height: '36px', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            setWaPhoneInputText('🎤 [Voice note simulating...]');
+                            setTimeout(() => {
+                              handlePhoneWaSend('🎤 [Voice message 0:15]');
+                            }, 1000);
+                          }}
+                        >🎤</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -4921,7 +5070,7 @@ export default function AppContent() {
       {/* Live Sync Management Modal */}
       {showLiveSyncModal && (
         <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000 }}>
-          <div className="modal-content" style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', width: '400px', maxWidth: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div className="modal-content" style={{ background: '#ffffff', padding: '24px', borderRadius: '12px', width: '400px', maxWidth: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)', margin: 0 }}>Live Sync Connection</h2>
               <button onClick={() => setShowLiveSyncModal(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
@@ -4983,6 +5132,55 @@ export default function AppContent() {
           </div>
         </div>
       )}
+      {/* AIS Mismatches Modal */}
+      {showAISMismatchesModal && (
+        <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000 }}>
+          <div className="modal-content" style={{ background: 'var(--bg-white)', padding: '24px', borderRadius: '12px', width: '90%', maxWidth: '500px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--text-primary)' }}>AIS Mismatches</h2>
+              <button onClick={() => setShowAISMismatchesModal(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>📄</span>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>SFT-005_Mutual_Funds.pdf</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>High Value Transactions</div>
+                  </div>
+                </div>
+                <div style={{ color: 'var(--danger)', fontWeight: 'bold', fontSize: '14px' }}>₹1,50,000</div>
+              </div>
+              <div style={{ padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>📄</span>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>TDS_194J_Professional.pdf</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Form 26AS mismatch</div>
+                  </div>
+                </div>
+                <div style={{ color: 'var(--danger)', fontWeight: 'bold', fontSize: '14px' }}>₹45,000</div>
+              </div>
+              <div style={{ padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>📄</span>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>SFT-014_Credit_Card.pdf</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Unreported Expenses</div>
+                  </div>
+                </div>
+                <div style={{ color: 'var(--danger)', fontWeight: 'bold', fontSize: '14px' }}>₹82,500</div>
+              </div>
+            </div>
+            
+            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setShowAISMismatchesModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

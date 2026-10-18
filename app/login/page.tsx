@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Mail, Lock, Eye, EyeOff, ShieldCheck, UserCheck } from 'lucide-react';
 
 type RoleKey = 'admin' | 'staff' | 'client';
 
@@ -59,6 +60,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState(ROLES[0].email);
   const [password, setPassword] = useState(ROLES[0].password);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -68,6 +72,24 @@ export default function LoginPage() {
 
   useEffect(() => {
     setMounted(true);
+    
+    // Load remember me info
+    try {
+      const savedEmail = localStorage.getItem('ca-os-remember-email');
+      const savedRole = localStorage.getItem('ca-os-remember-role') as RoleKey;
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setRememberMe(true);
+        if (savedRole) {
+          setSelectedRole(savedRole);
+          const role = ROLES.find(r => r.key === savedRole);
+          if (role) setPassword(role.password);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load remembered email:', e);
+    }
+
     // If already logged in, redirect to dashboard
     try {
       const stored = localStorage.getItem('ca-os-user');
@@ -108,24 +130,67 @@ export default function LoginPage() {
     setPassword(role.password);
   };
 
+  const validateEmail = (val: string) => {
+    if (!val.trim()) {
+      setEmailError('Email is required.');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      setEmailError('Please enter a valid email address.');
+    } else {
+      setEmailError('');
+    }
+  };
+
+  const validatePassword = (val: string) => {
+    if (!val.trim()) {
+      setPasswordError('Password is required.');
+    } else if (val.trim().length < 6) {
+      setPasswordError('Password must be at least 6 characters.');
+    } else {
+      setPasswordError('');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLocked || loading) return;
 
     setError('');
+    
+    const trimmedEmail = email.toLowerCase().trim();
+    const trimmedPass = password.trim();
+
+    // Perform validation
+    let hasValidationError = false;
+    if (!trimmedEmail) {
+      setEmailError('Email is required.');
+      hasValidationError = true;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setEmailError('Please enter a valid email address.');
+      hasValidationError = true;
+    } else {
+      setEmailError('');
+    }
+
+    if (!trimmedPass) {
+      setPasswordError('Password is required.');
+      hasValidationError = true;
+    } else if (trimmedPass.length < 6) {
+      setPasswordError('Password must be at least 6 characters.');
+      hasValidationError = true;
+    } else {
+      setPasswordError('');
+    }
+
+    if (hasValidationError) {
+      return;
+    }
+
     setLoading(true);
 
     // Simulated auth delay
     await new Promise(resolve => setTimeout(resolve, 700));
 
     try {
-      const trimmedEmail = email.toLowerCase().trim();
-      const trimmedPass = password.trim();
-
-      if (!trimmedEmail || !trimmedPass) {
-        throw new Error('Email and password are required.');
-      }
-
       // Find matching role by credentials
       const matchedRole = ROLES.find(
         r => r.email.toLowerCase() === trimmedEmail && r.password === trimmedPass
@@ -153,6 +218,14 @@ export default function LoginPage() {
         avatar: matchedRole.avatar,
         loginTime: new Date().toISOString(),
       };
+
+      if (rememberMe) {
+        localStorage.setItem('ca-os-remember-email', trimmedEmail);
+        localStorage.setItem('ca-os-remember-role', selectedRole);
+      } else {
+        localStorage.removeItem('ca-os-remember-email');
+        localStorage.removeItem('ca-os-remember-role');
+      }
 
       localStorage.setItem('ca-os-user', JSON.stringify(userObj));
       setLoginAttempts(0);
@@ -357,30 +430,38 @@ export default function LoginPage() {
                 Email
               </label>
               <div style={{ position: 'relative' }}>
-                <span style={{
+                <Mail style={{
                   position: 'absolute', left: '12px', top: '50%',
                   transform: 'translateY(-50%)',
-                  fontSize: '15px', color: 'rgba(255,255,255,0.3)',
-                }}>✉️</span>
+                  width: '16px', height: '16px', color: 'rgba(255,255,255,0.3)',
+                }} />
                 <input
                   type="text"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => {
+                    setEmail(e.target.value);
+                    if (emailError) validateEmail(e.target.value);
+                  }}
+                  onBlur={e => validateEmail(e.target.value)}
                   placeholder={activeRole.email}
                   disabled={isLocked}
                   autoComplete="email"
                   style={{
                     width: '100%', padding: '12px 14px 12px 40px',
                     background: 'rgba(255,255,255,0.06)',
-                    border: '1.5px solid rgba(255,255,255,0.1)',
+                    border: emailError ? '1.5px solid #FCA5A5' : '1.5px solid rgba(255,255,255,0.1)',
                     borderRadius: '8px', color: '#fff', fontSize: '14px',
                     outline: 'none', boxSizing: 'border-box',
                     fontFamily: 'inherit', transition: 'border-color 0.2s',
                   }}
-                  onFocus={e => e.target.style.borderColor = 'rgba(77,139,255,0.6)'}
-                  onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                  onFocus={e => e.target.style.borderColor = emailError ? '#FCA5A5' : 'rgba(77,139,255,0.6)'}
                 />
               </div>
+              {emailError && (
+                <div style={{ fontSize: '11.5px', color: '#FCA5A5', marginTop: '6px', fontWeight: '500' }}>
+                  ⚠️ {emailError}
+                </div>
+              )}
             </div>
 
             {/* Password */}
@@ -393,28 +474,31 @@ export default function LoginPage() {
                 Password
               </label>
               <div style={{ position: 'relative' }}>
-                <span style={{
+                <Lock style={{
                   position: 'absolute', left: '12px', top: '50%',
                   transform: 'translateY(-50%)',
-                  fontSize: '15px', color: 'rgba(255,255,255,0.3)',
-                }}>🔑</span>
+                  width: '16px', height: '16px', color: 'rgba(255,255,255,0.3)',
+                }} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={e => {
+                    setPassword(e.target.value);
+                    if (passwordError) validatePassword(e.target.value);
+                  }}
+                  onBlur={e => validatePassword(e.target.value)}
                   placeholder="••••••••"
                   disabled={isLocked}
                   autoComplete="current-password"
                   style={{
                     width: '100%', padding: '12px 44px 12px 40px',
                     background: 'rgba(255,255,255,0.06)',
-                    border: '1.5px solid rgba(255,255,255,0.1)',
+                    border: passwordError ? '1.5px solid #FCA5A5' : '1.5px solid rgba(255,255,255,0.1)',
                     borderRadius: '8px', color: '#fff', fontSize: '14px',
                     outline: 'none', boxSizing: 'border-box',
                     fontFamily: 'inherit', transition: 'border-color 0.2s',
                   }}
-                  onFocus={e => e.target.style.borderColor = 'rgba(77,139,255,0.6)'}
-                  onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                  onFocus={e => e.target.style.borderColor = passwordError ? '#FCA5A5' : 'rgba(77,139,255,0.6)'}
                 />
                 <button
                   type="button"
@@ -424,12 +508,36 @@ export default function LoginPage() {
                     transform: 'translateY(-50%)',
                     background: 'none', border: 'none',
                     color: 'rgba(255,255,255,0.4)',
-                    cursor: 'pointer', fontSize: '15px', padding: '0',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0',
                   }}
                 >
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {passwordError && (
+                <div style={{ fontSize: '11.5px', color: '#FCA5A5', marginTop: '6px', fontWeight: '500' }}>
+                  ⚠️ {passwordError}
+                </div>
+              )}
+            </div>
+
+            {/* Remember Me and Forgot Password */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '-4px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={e => setRememberMe(e.target.checked)}
+                  style={{
+                    width: '15px', height: '15px', borderRadius: '4px',
+                    accentColor: '#2563EB', cursor: 'pointer',
+                  }}
+                />
+                Remember Me
+              </label>
+              <a href="#forgot" style={{ fontSize: '13px', color: '#4D8BFF', textDecoration: 'none', fontWeight: '500' }}>
+                Forgot Password?
+              </a>
             </div>
 
             {/* Sign In Button */}

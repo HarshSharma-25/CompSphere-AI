@@ -2,6 +2,7 @@
 
 export const ROUTES = {
   dashboard: '/',
+  banking: '/banking',
   clients: '/clients',
   clientProfile: (id: string) => `/clients/${id}`,
   invoices: '/billing',

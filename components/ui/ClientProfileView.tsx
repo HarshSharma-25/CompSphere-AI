@@ -63,7 +63,6 @@ export default function ClientProfileView({
   initialTab = 'Overview',
 }: ClientProfileViewProps) {
   const [activeTab, setActiveTab] = useState(initialTab);
-  const { theme } = useTheme();
 
   // Filter client-specific data
   const clientDocs = documents.filter(d => d.clientId === client.id);

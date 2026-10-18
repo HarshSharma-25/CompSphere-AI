@@ -1313,8 +1313,19 @@ CREATE INDEX idx_rep_shared_reports_token ON rep_shared_reports(secure_link_toke
 CREATE INDEX idx_rep_comments_report ON rep_comments(report_id);
 CREATE INDEX idx_rep_analytics_cache_key ON rep_analytics_cache(cache_key);
 
+-- =========================================================================
+-- MODULE 17: BANK SYNC & ACCOUNT AGGREGATOR TABLES
+-- =========================================================================
 
+CREATE TABLE IF NOT EXISTS aa_consents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    consent_handle VARCHAR(255) NOT NULL,
+    consent_status VARCHAR(50) NOT NULL DEFAULT 'PENDING', -- PENDING, ACTIVE, REVOKED, EXPIRED
+    fip_id VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
 
-
-
-
+ALTER TABLE bank_accounts ADD COLUMN aa_linked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bank_accounts ADD COLUMN aa_consent_id UUID REFERENCES aa_consents(id) ON DELETE SET NULL;
